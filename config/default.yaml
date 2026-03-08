@@ -1,0 +1,31 @@
+# Default Configuration
+
+## Database Connections
+
+- host: localhost
+  port: 5432
+  username: user
+  password: password
+  database: osint_db
+
+## API Settings
+
+- api_key: your_api_key_here
+  api_url: https://api.example.com
+
+## Logging Configuration
+
+- level: info
+  file: logs/app.log
+
+## Collection Parameters
+
+- max_items: 1000
+  collection_interval: 60
+
+## Analysis Settings
+
+- method: heuristic
+  thresholds:
+    alert: 0.75
+    warning: 0.5
