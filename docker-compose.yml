@@ -1,1 +1,197 @@
-version: '3.8'\n\nservices:\n  flask_app:\n    image: flask_app_image\n    build: .\n    ports:\n      - '5000:5000'\n    depends_on:\n      - postgres\n      - mongo\n      - elasticsearch\n      - redis\n      - neo4j\n    environment:\n      DATABASE_URL: 'postgresql://user:password@postgres:5432/db_name'\n\n  postgres:\n    image: postgres:latest\n    restart: always\n    environment:\n      POSTGRES_USER: user\n      POSTGRES_PASSWORD: password\n      POSTGRES_DB: db_name\n    networks:\n      - backend\n\n  mongo:\n    image: mongo:latest\n    restart: always\n    networks:\n      - backend\n\n  elasticsearch:\n    image: elasticsearch:7.10.1\n    restart: always\n    environment:\n      - discovery.type=single-node\n    networks:\n      - backend\n\n  redis:\n    image: redis:latest\n    restart: always\n    networks:\n      - backend\n\n  neo4j:\n    image: neo4j:latest\n    restart: always\n    environment:\n      NEO4J_AUTH: 'neo4j/password'\n    networks:\n      - backend\n\nnetworks:\n  backend:\n    driver: bridge\n
+version: '3.8'
+
+services:
+  flask_app:
+    image: flask_app_image
+    build: .
+    ports:
+      - '${APP_PORT:-5001}:5000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_started
+    environment:
+      # 应用配置
+      DEBUG: '${DEBUG:-false}'
+      SECRET_KEY: '${SECRET_KEY:-change_me_in_production}'
+      LOG_LEVEL: '${LOG_LEVEL:-INFO}'
+      ENFORCE_API_KEY: '${ENFORCE_API_KEY:-false}'
+      OSINT_API_KEY: '${OSINT_API_KEY:-}'
+      ENABLE_SCHEDULER: '${ENABLE_SCHEDULER:-true}'
+      ENABLE_BACKGROUND_SERVICES: '${ENABLE_BACKGROUND_SERVICES:-true}'
+      GUNICORN_WORKERS: '${GUNICORN_WORKERS:-1}'
+      GUNICORN_THREADS: '${GUNICORN_THREADS:-8}'
+      GUNICORN_TIMEOUT: '${GUNICORN_TIMEOUT:-120}'
+      # PostgreSQL
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: '${POSTGRES_USER:-user}'
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-password}'
+      POSTGRES_DB: '${POSTGRES_DB:-db_name}'
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-db_name}'
+      # MongoDB
+      MONGO_HOST: mongo
+      MONGO_PORT: 27017
+      MONGO_DB: '${MONGO_DB:-osint_db}'
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # Elasticsearch
+      ES_HOST: elasticsearch
+      ES_PORT: 9200
+      # Neo4j
+      NEO4J_HOST: neo4j
+      NEO4J_PORT: 7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: '${NEO4J_PASSWORD:-password}'
+      # 采集配置
+      WEIBO_COOKIE: '${WEIBO_COOKIE:-}'
+      ZHIHU_COOKIE: '${ZHIHU_COOKIE:-}'
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - backend
+
+  flask_app_prod:
+    image: flask_app_image
+    build: .
+    profiles: ["prod"]
+    ports:
+      - '${APP_PORT_PROD:-5100}:5000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_started
+    environment:
+      DEBUG: 'false'
+      SECRET_KEY: '${SECRET_KEY:-change_me_in_production}'
+      LOG_LEVEL: '${LOG_LEVEL:-INFO}'
+      ENFORCE_API_KEY: 'true'
+      OSINT_API_KEY: '${OSINT_API_KEY:-change_me_api_key}'
+      ENABLE_SCHEDULER: '${ENABLE_SCHEDULER:-true}'
+      ENABLE_BACKGROUND_SERVICES: '${ENABLE_BACKGROUND_SERVICES:-true}'
+      GUNICORN_WORKERS: '${GUNICORN_WORKERS:-1}'
+      GUNICORN_THREADS: '${GUNICORN_THREADS:-8}'
+      GUNICORN_TIMEOUT: '${GUNICORN_TIMEOUT:-120}'
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: '${POSTGRES_USER:-user}'
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-password}'
+      POSTGRES_DB: '${POSTGRES_DB:-db_name}'
+      DATABASE_URL: 'postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-db_name}'
+      MONGO_HOST: mongo
+      MONGO_PORT: 27017
+      MONGO_DB: '${MONGO_DB:-osint_db}'
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ES_HOST: elasticsearch
+      ES_PORT: 9200
+      NEO4J_HOST: neo4j
+      NEO4J_PORT: 7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: '${NEO4J_PASSWORD:-password}'
+      WEIBO_COOKIE: '${WEIBO_COOKIE:-}'
+      ZHIHU_COOKIE: '${ZHIHU_COOKIE:-}'
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - backend
+
+  postgres:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: '${POSTGRES_USER:-user}'
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-password}'
+      POSTGRES_DB: '${POSTGRES_DB:-db_name}'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-db_name}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+  mongo:
+    image: mongo:6
+    restart: always
+    environment:
+      MONGO_INITDB_DATABASE: '${MONGO_DB:-osint_db}'
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - backend
+
+  elasticsearch:
+    image: elasticsearch:7.17.10
+    restart: always
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - backend
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+  neo4j:
+    image: neo4j:5
+    restart: always
+    environment:
+      NEO4J_AUTH: 'neo4j/${NEO4J_PASSWORD:-password}'
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - neo4j_data:/data
+    ports:
+      - '7474:7474'
+      - '7687:7687'
+    networks:
+      - backend
+
+volumes:
+  postgres_data:
+  mongo_data:
+  es_data:
+  redis_data:
+  neo4j_data:
+
+networks:
+  backend:
+    driver: bridge

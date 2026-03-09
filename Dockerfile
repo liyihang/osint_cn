@@ -1,17 +1,19 @@
-# Use the official Python image from the Docker Hub
 FROM python:3.9
 
-# Set the working directory in the container
 WORKDIR /app
 
-# Copy requirements.txt first to leverage Docker cache
-COPY requirements.txt ./
+ENV PYTHONDONTWRITEBYTECODE=1 \
+	PYTHONUNBUFFERED=1 \
+	FLASK_APP=osint_cn/api.py
 
-# Install the necessary dependencies
+COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the entire application into the container
 COPY . .
 
-# Command to run the application
-CMD ["flask", "run", "--host=0.0.0.0"]
+RUN useradd -m -u 10001 appuser && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 5000
+
+CMD ["sh", "-c", "gunicorn osint_cn.api:app --bind 0.0.0.0:5000 --workers ${GUNICORN_WORKERS:-1} --threads ${GUNICORN_THREADS:-8} --timeout ${GUNICORN_TIMEOUT:-120} --log-level ${GUNICORN_LOG_LEVEL:-info}"]
