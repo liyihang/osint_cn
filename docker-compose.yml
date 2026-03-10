@@ -54,6 +54,9 @@ services:
       # 采集配置
       WEIBO_COOKIE: '${WEIBO_COOKIE:-}'
       ZHIHU_COOKIE: '${ZHIHU_COOKIE:-}'
+      AI_API_KEY: '${AI_API_KEY:-}'
+      AI_API_BASE: '${AI_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}'
+      AI_MODEL: '${AI_MODEL:-qwen-plus}'
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped
@@ -107,6 +110,9 @@ services:
       NEO4J_PASSWORD: '${NEO4J_PASSWORD:-password}'
       WEIBO_COOKIE: '${WEIBO_COOKIE:-}'
       ZHIHU_COOKIE: '${ZHIHU_COOKIE:-}'
+      AI_API_KEY: '${AI_API_KEY:-}'
+      AI_API_BASE: '${AI_API_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}'
+      AI_MODEL: '${AI_MODEL:-qwen-plus}'
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped

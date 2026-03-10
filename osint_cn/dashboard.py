@@ -1,5 +1,5 @@
 """
-教育集团舆情监控大屏
+全国主流平台舆情检测中心大屏
 
 参考行业大屏布局，保留左侧导航。
 适配后续超大屏展示场景。
@@ -11,7 +11,7 @@ DASHBOARD_HTML = '''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>教育集团舆情综合态势</title>
+    <title>全国主流平台舆情检测中心</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
     <style>
@@ -49,7 +49,7 @@ DASHBOARD_HTML = '''
             height: 100vh;
             display: grid;
             grid-template-columns: 320px 1fr;
-            grid-template-rows: 68px 1fr;
+            grid-template-rows: 88px 1fr;
             gap: 10px;
             padding: 10px;
         }
@@ -57,13 +57,14 @@ DASHBOARD_HTML = '''
         .topbar {
             grid-column: 1 / -1;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: space-between;
             background: linear-gradient(90deg, #0a1730 0%, #102a52 50%, #0a1730 100%);
             border: 1px solid var(--line);
             border-radius: 8px;
             box-shadow: 0 0 18px rgba(43, 215, 255, 0.12);
-            padding: 0 18px;
+            padding: 10px 18px;
+            gap: 16px;
         }
 
         .top-title {
@@ -75,8 +76,10 @@ DASHBOARD_HTML = '''
 
         .top-meta {
             display: flex;
-            gap: 18px;
+            gap: 12px 18px;
             align-items: center;
+            justify-content: flex-end;
+            flex-wrap: wrap;
             font-size: 14px;
             color: var(--text-soft);
         }
@@ -94,6 +97,89 @@ DASHBOARD_HTML = '''
             height: 34px;
             padding: 0 12px;
             cursor: pointer;
+        }
+
+        .query-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .query-presets {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            width: 100%;
+        }
+
+        .preset-btn {
+            height: 30px;
+            padding: 0 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(111, 203, 255, 0.25);
+            background: rgba(15, 39, 75, 0.82);
+            color: #bfe3ff;
+            font-size: 12px;
+            cursor: pointer;
+            transition: 0.2s ease;
+        }
+
+        .preset-btn:hover,
+        .preset-btn.active {
+            background: linear-gradient(180deg, rgba(46, 140, 255, 0.42), rgba(16, 75, 150, 0.72));
+            color: #ffffff;
+            border-color: rgba(111, 203, 255, 0.45);
+        }
+
+        .query-input,
+        .query-select {
+            height: 34px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: #0f274b;
+            color: #dce9ff;
+            padding: 0 10px;
+            font-size: 13px;
+            outline: none;
+        }
+
+        .query-input {
+            width: 220px;
+        }
+
+        .query-platforms {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            color: #9fc3ee;
+            font-size: 12px;
+            max-width: 600px;
+        }
+
+        .query-platforms label {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+            padding: 3px 8px;
+            border-radius: 999px;
+            border: 1px solid rgba(111, 203, 255, 0.2);
+            background: rgba(15, 39, 75, 0.75);
+            white-space: nowrap;
+        }
+
+        .query-platforms input {
+            accent-color: var(--cyan);
+        }
+
+        .btn-primary {
+            background: linear-gradient(180deg, #0fb57f, #0b8b62);
+            border-color: rgba(56, 209, 153, 0.5);
         }
 
         .sidebar {
@@ -242,7 +328,6 @@ DASHBOARD_HTML = '''
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 10px;
             padding: 8px 10px;
             border: 1px solid var(--line-soft);
             border-radius: 6px;
@@ -255,17 +340,17 @@ DASHBOARD_HTML = '''
         }
 
         .metric .val {
-            font-size: 22px;
+            font-size: 18px;
             font-weight: 700;
             color: var(--yellow);
             font-family: ui-monospace, Menlo, Monaco, Consolas, monospace;
         }
 
         .sentiment-ring {
-            width: 140px;
-            height: 140px;
+            width: 124px;
+            height: 124px;
             border-radius: 50%;
-            margin: 6px auto 14px;
+            margin: 0 auto;
             border: 8px solid #15345f;
             position: relative;
             display: flex;
@@ -276,8 +361,8 @@ DASHBOARD_HTML = '''
 
         .sentiment-ring::after {
             content: "";
-            width: 90px;
-            height: 90px;
+            width: 78px;
+            height: 78px;
             border-radius: 50%;
             background: #0b1a34;
             position: absolute;
@@ -314,6 +399,76 @@ DASHBOARD_HTML = '''
         .right-scroll {
             overflow-y: auto;
             height: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .sentiment-overview {
+            display: grid;
+            grid-template-columns: 124px 1fr;
+            gap: 12px;
+            align-items: center;
+            min-height: 0;
+        }
+
+        .sentiment-metrics {
+            display: grid;
+            gap: 8px;
+        }
+
+        .subpanel-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: var(--cyan);
+            font-size: 14px;
+            font-weight: 600;
+            padding-top: 2px;
+        }
+
+        .hot-words-cloud {
+            display: flex;
+            flex-wrap: wrap;
+            align-content: flex-start;
+            gap: 10px 8px;
+            padding: 12px;
+            min-height: 144px;
+            border: 1px solid var(--line-soft);
+            border-radius: 10px;
+            background: radial-gradient(circle at top left, rgba(43, 215, 255, 0.12), rgba(13, 26, 50, 0.92) 62%);
+            overflow: auto;
+        }
+
+        .hot-word-item {
+            --accent: #49cbff;
+            --size: 18px;
+            display: inline-flex;
+            align-items: center;
+            max-width: 100%;
+            min-height: 34px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+            background: color-mix(in srgb, var(--accent) 12%, rgba(8, 20, 39, 0.88));
+            box-shadow: inset 0 0 18px color-mix(in srgb, var(--accent) 10%, transparent);
+            color: var(--accent);
+            font-size: var(--size);
+            font-weight: 700;
+            line-height: 1.15;
+            letter-spacing: 0.5px;
+            white-space: normal;
+            word-break: break-all;
+        }
+
+        .hot-word-item[data-rank="1"] {
+            min-height: 42px;
+            padding: 8px 16px;
+        }
+
+        .hot-word-item[data-rank="2"],
+        .hot-word-item[data-rank="3"] {
+            padding: 7px 14px;
         }
 
         .bottom-info {
@@ -495,6 +650,39 @@ DASHBOARD_HTML = '''
             cursor: pointer;
         }
 
+        .drawer-input,
+        .drawer-textarea {
+            width: 100%;
+            background: #102a50;
+            color: #dce9ff;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 8px 10px;
+            font-size: 12px;
+        }
+
+        .drawer-textarea {
+            min-height: 70px;
+            resize: vertical;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .form-grid-full {
+            grid-column: 1 / -1;
+        }
+
+        .form-label {
+            color: #8fb0df;
+            font-size: 12px;
+            margin-bottom: 6px;
+            display: block;
+        }
+
         .drawer-btn:disabled {
             opacity: 0.45;
             cursor: not-allowed;
@@ -546,10 +734,38 @@ DASHBOARD_HTML = '''
         @media (max-width: 1600px) {
             .screen {
                 grid-template-columns: 280px 1fr;
+                grid-template-rows: 100px 1fr;
             }
 
             .main {
                 grid-template-columns: 240px 1fr 280px;
+            }
+
+            .top-title {
+                font-size: 24px;
+            }
+
+            .query-platforms {
+                max-width: 520px;
+            }
+
+            .sentiment-overview {
+                grid-template-columns: 1fr;
+            }
+
+            .sentiment-ring {
+                width: 116px;
+                height: 116px;
+            }
+
+            .sentiment-ring::after {
+                width: 74px;
+                height: 74px;
+            }
+
+            .hot-words-cloud {
+                min-height: 128px;
+                padding: 10px;
             }
         }
     </style>
@@ -557,8 +773,39 @@ DASHBOARD_HTML = '''
 <body>
     <div class="screen">
         <header class="topbar">
-            <div class="top-title" id="top-title">全国教育集团舆情综合态势</div>
+            <div class="top-title" id="top-title">全国主流平台舆情检测中心</div>
             <div class="top-meta">
+                <div class="query-controls">
+                    <input id="pipeline-keyword" class="query-input" type="text" placeholder="输入公司/产品/事件关键词" value="舆情热点" />
+                    <select id="pipeline-max-items" class="query-select">
+                        <option value="30">30条/平台</option>
+                        <option value="60">60条/平台</option>
+                        <option value="100" selected>100条/平台</option>
+                        <option value="150">150条/平台</option>
+                        <option value="200">200条/平台</option>
+                        <option value="300">300条/平台</option>
+                        <option value="500">500条/平台</option>
+                    </select>
+                    <div class="query-platforms" id="pipeline-platforms">
+                        <label><input type="checkbox" value="weibo" checked />微博</label>
+                        <label><input type="checkbox" value="douyin" checked />抖音</label>
+                        <label><input type="checkbox" value="kuaishou" />快手</label>
+                        <label><input type="checkbox" value="zhihu" checked />知乎</label>
+                        <label><input type="checkbox" value="baidu" checked />百度</label>
+                        <label><input type="checkbox" value="wechat" />公众号</label>
+                        <label><input type="checkbox" value="xiaohongshu" />小红书</label>
+                        <label><input type="checkbox" value="bilibili" />B站</label>
+                        <label><input type="checkbox" value="tieba" checked />贴吧</label>
+                        <label><input type="checkbox" value="toutiao" />头条</label>
+                    </div>
+                    <button class="btn btn-primary" onclick="runDashboardPipeline()">一键采集分析</button>
+                    <div class="query-presets" id="pipeline-presets">
+                        <button class="preset-btn active" type="button" data-preset="brand" onclick="applyPipelinePreset('brand', this)">品牌舆情</button>
+                        <button class="preset-btn" type="button" data-preset="complaint" onclick="applyPipelinePreset('complaint', this)">客诉投诉</button>
+                        <button class="preset-btn" type="button" data-preset="competitor" onclick="applyPipelinePreset('competitor', this)">竞品对比</button>
+                        <button class="preset-btn" type="button" data-preset="deep-report" onclick="applyPipelinePreset('deep-report', this)">深度报告</button>
+                    </div>
+                </div>
                 <span>热度总计：<strong id="heat-total">56,479</strong></span>
                 <span>时间：<strong id="current-time">--:--:--</strong></span>
                 <span>日期：<strong id="current-date">----</strong></span>
@@ -582,6 +829,8 @@ DASHBOARD_HTML = '''
 
             <div class="side-group">
                 <div class="side-title">分析</div>
+                <div class="side-item" data-view="group-overview">🧩 分组总览</div>
+                <div class="side-item" data-view="competitor-overview">⚔ 竞品对比</div>
                 <div class="side-item" data-view="trend">📈 趋势分析</div>
                 <div class="side-item" data-view="report">📄 舆情报告</div>
             </div>
@@ -600,18 +849,18 @@ DASHBOARD_HTML = '''
                     <small>实时滚动</small>
                 </div>
                 <div class="panel-body news-list" id="news-list">
-                    <div class="news-item">教育部发布中小学数字化转型指导意见，关注课堂质量提升</div>
-                    <div class="news-item">家长热议课后服务收费标准，多地出台透明化公示方案</div>
-                    <div class="news-item">全国重点校区春季招生启动，咨询量环比增长 18%</div>
+                    <div class="news-item">政策动态：新规发布，关注交互质量提升</div>
+                    <div class="news-item">用户热议课后服务价格标准，多地出台透明化公示方案</div>
+                    <div class="news-item">全国重点区域春季业务启动，咨询量环比增长 18%</div>
                     <div class="news-item">“双减”执行后培训服务升级，满意度持续上升</div>
-                    <div class="news-item">校园食品安全话题升温，集团专项督导已上线</div>
+                    <div class="news-item">平台食品安全话题升温，集团专项督导已上线</div>
                     <div class="news-item">AI 教学辅助工具试点扩容，师生互动效率提升</div>
                 </div>
             </section>
 
             <section class="panel" style="grid-column: 2; grid-row: 1;">
                 <div class="panel-header">
-                    <span id="panel-map-title">全国校区舆情热力分布</span>
+                    <span id="panel-map-title">全国舆情热力分布</span>
                     <small>单位：热度指数</small>
                 </div>
                 <div class="panel-body">
@@ -628,31 +877,34 @@ DASHBOARD_HTML = '''
                     <small>今日</small>
                 </div>
                 <div class="panel-body right-scroll">
-                    <div class="sentiment-ring">
-                        <div class="sentiment-face">🙂</div>
+                    <div class="sentiment-overview">
+                        <div class="sentiment-ring">
+                            <div class="sentiment-face">🙂</div>
+                        </div>
+                        <div class="sentiment-metrics">
+                            <div class="metric">
+                                <span class="name">正面</span>
+                                <span class="val" style="color: var(--green);" id="sentiment-positive">13.5万</span>
+                            </div>
+                            <div class="metric">
+                                <span class="name">中立</span>
+                                <span class="val" style="color: var(--yellow);" id="sentiment-neutral">11万</span>
+                            </div>
+                            <div class="metric">
+                                <span class="name">负面</span>
+                                <span class="val" style="color: var(--red);" id="sentiment-negative">3.7万</span>
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="metric">
-                        <span class="name">正面</span>
-                        <span class="val" style="color: var(--green);" id="sentiment-positive">13.5万</span>
-                    </div>
-                    <div class="metric">
-                        <span class="name">中立</span>
-                        <span class="val" style="color: var(--yellow);" id="sentiment-neutral">11万</span>
-                    </div>
-                    <div class="metric">
-                        <span class="name">负面</span>
-                        <span class="val" style="color: var(--red);" id="sentiment-negative">3.7万</span>
-                    </div>
-
-                    <div class="panel-header" style="margin-top: 8px;"><span>热词分析</span><small>实时</small></div>
-                    <div style="padding: 10px 0; color: #67b8ff; font-size: 18px; line-height: 1.8;" id="hot-words">
-                        <span style="font-size: 34px; color: #49cbff;">师资</span>
-                        <span style="font-size: 24px; color: #2e8cff;">教学质量</span>
-                        <span style="font-size: 28px; color: #87ddff;">收费</span>
-                        <span style="font-size: 20px; color: #6fcbff;">双减</span>
-                        <span style="font-size: 26px; color: #4fbaff;">校园安全</span>
-                        <span style="font-size: 18px; color: #9cd9ff;">托管</span>
+                    <div class="subpanel-title"><span>热词分析</span><small>实时</small></div>
+                    <div class="hot-words-cloud" id="hot-words">
+                        <span class="hot-word-item" data-rank="1" style="--size: 28px; --accent: #49cbff;">舆情热点</span>
+                        <span class="hot-word-item" data-rank="2" style="--size: 22px; --accent: #2e8cff;">用户态度</span>
+                        <span class="hot-word-item" data-rank="3" style="--size: 24px; --accent: #87ddff;">服务评价</span>
+                        <span class="hot-word-item" data-rank="4" style="--size: 18px; --accent: #6fcbff;">业务动态</span>
+                        <span class="hot-word-item" data-rank="5" style="--size: 20px; --accent: #4fbaff;">风险预警</span>
+                        <span class="hot-word-item" data-rank="6" style="--size: 16px; --accent: #9cd9ff;">正面传播</span>
                     </div>
                 </div>
             </section>
@@ -675,8 +927,8 @@ DASHBOARD_HTML = '''
                     <div style="margin-top: 6px;" id="ticker-source">来源：今日头条</div>
                 </div>
                 <div class="ticker-content" id="ticker-content">
-                    本次舆情主要集中在教育服务体验与学费透明度两个维度，讨论来源以微博、短视频平台与家长社群为主。
-                    其中“师资稳定性”“收费标准公开”相关话题热度上升明显。建议持续跟踪高频关键词，结合校区工单系统联动处置，
+                    本次舆情主要集中在用户体验与服务透明度两个维度，讨论来源以主流社交平台与用户社群为主。
+                    其中“关键业务”“消费透明度”相关话题热度上升明显。建议持续跟踪高频关键词，结合工单系统联动处置，
                     对重点投诉在 2 小时内完成首次响应并发布统一解释口径。
                 </div>
             </section>
@@ -684,9 +936,9 @@ DASHBOARD_HTML = '''
             <section class="risk-box">
                 <div class="risk-title">最新动态 / 风险提示</div>
                 <div class="risk-list" id="risk-list">
-                    <div class="risk-item">【高优】某校区“退费处理慢”讨论量 1 小时增长 67%，建议客服中心加派坐席。</div>
-                    <div class="risk-item">【中优】“课程难度偏高”在家长群扩散，建议教研组发布说明与学习路径建议。</div>
-                    <div class="risk-item">【提示】“校园设施升级”获得较多正向反馈，可作为官方正面传播素材。</div>
+                    <div class="risk-item">【高优】核心业务“退费处理慢”讨论量 1 小时增长 67%，建议客服中心加派坐席。</div>
+                    <div class="risk-item">【中优】“服务体验反馈”在用户社群扩散，建议业务部门发布说明与学习路径建议。</div>
+                    <div class="risk-item">【建议】“服务设施优化”获得较多正向反馈，可作为官方正面传播素材。</div>
                 </div>
             </section>
         </main>
@@ -707,6 +959,34 @@ DASHBOARD_HTML = '''
         let mapChart = null;
         let trendChart = null;
         let currentView = 'overview';
+        let latestPipelineResult = null;
+        const monitorState = {
+            monitors: [],
+            groups: [],
+            selectedId: null,
+            selectedGroupId: ''
+        };
+        const competitorState = {
+            baseGroupId: ''
+        };
+        const PIPELINE_PRESETS = {
+            brand: {
+                maxItems: 100,
+                platforms: ['weibo', 'douyin', 'zhihu', 'baidu', 'tieba']
+            },
+            complaint: {
+                maxItems: 150,
+                platforms: ['weibo', 'douyin', 'kuaishou', 'xiaohongshu', 'toutiao']
+            },
+            competitor: {
+                maxItems: 200,
+                platforms: ['weibo', 'douyin', 'zhihu', 'bilibili', 'tieba', 'toutiao']
+            },
+            'deep-report': {
+                maxItems: 500,
+                platforms: ['weibo', 'douyin', 'kuaishou', 'zhihu', 'baidu', 'wechat', 'xiaohongshu', 'bilibili', 'tieba', 'toutiao']
+            }
+        };
         const complaintState = {
             collections: [],
             alerts: [],
@@ -720,19 +1000,44 @@ DASHBOARD_HTML = '''
         };
 
         const viewMeta = {
-            overview: { top: '全国教育集团舆情综合态势', news: '热门新闻', map: '全国校区舆情热力分布', sentiment: '社会情绪指数', trend: '发展趋势' },
-            realtime: { top: '教育集团实时舆情监测中心', news: '实时舆情流', map: '实时区域分布', sentiment: '情绪变化', trend: '小时趋势' },
-            sentiment: { top: '教育集团情感分析中心', news: '情感样本', map: '情感地域分布', sentiment: '情感统计', trend: '情感趋势' },
-            complaints: { top: '教育集团客诉追踪中心', news: '最新客诉', map: '客诉区域分布', sentiment: '客诉情绪', trend: '客诉趋势' },
-            keywords: { top: '教育集团关键词监控中心', news: '关键词相关动态', map: '关键词区域分布', sentiment: '关键词情感', trend: '关键词热度趋势' },
-            trend: { top: '教育集团趋势分析中心', news: '趋势相关新闻', map: '趋势区域分布', sentiment: '趋势情绪', trend: '综合趋势' },
-            report: { top: '教育集团舆情报告中心', news: '报告摘要', map: '报告区域摘要', sentiment: '报告情绪摘要', trend: '报告趋势摘要' },
-            alert: { top: '教育集团危机预警中心', news: '预警相关动态', map: '预警区域分布', sentiment: '风险情绪', trend: '预警趋势' },
-            setting: { top: '教育集团系统配置中心', news: '系统公告', map: '系统覆盖区域', sentiment: '服务状态', trend: '系统运行趋势' }
+            overview: { top: '全国主流平台舆情检测中心', news: '热门新闻', map: '全国主流平台舆情热力分布', sentiment: '社会情绪指数', trend: '发展趋势' },
+            realtime: { top: '全国主流平台实时舆情监测中心', news: '实时舆情流', map: '实时区域分布', sentiment: '情绪变化', trend: '小时趋势' },
+            sentiment: { top: '全国主流平台情感分析中心', news: '情感样本', map: '情感地域分布', sentiment: '情感统计', trend: '情感趋势' },
+            complaints: { top: '全国主流平台客诉追踪中心', news: '最新客诉', map: '客诉区域分布', sentiment: '客诉情绪', trend: '客诉趋势' },
+            keywords: { top: '全国主流平台关键词监控中心', news: '关键词相关动态', map: '关键词区域分布', sentiment: '关键词情感', trend: '关键词热度趋势' },
+            'group-overview': { top: '全国主流平台监控分组总览', news: '分组动态摘要', map: '分组覆盖区域', sentiment: '分组风险分布', trend: '分组热度对比' },
+            'competitor-overview': { top: '全国主流平台竞品对比中心', news: '竞品动态摘要', map: '竞品关注焦点', sentiment: '竞争态势判断', trend: '竞品热度对比' },
+            trend: { top: '全国主流平台趋势分析中心', news: '趋势相关新闻', map: '趋势区域分布', sentiment: '趋势情绪', trend: '综合趋势' },
+            report: { top: '全国主流平台舆情报告中心', news: '报告摘要', map: '报告区域摘要', sentiment: '报告情绪摘要', trend: '报告趋势摘要' },
+            alert: { top: '全国主流平台危机预警中心', news: '预警相关动态', map: '预警区域分布', sentiment: '风险情绪', trend: '预警趋势' },
+            setting: { top: '全国主流平台系统配置中心', news: '系统公告', map: '系统覆盖区域', sentiment: '服务状态', trend: '系统运行趋势' }
         };
 
         async function apiRequest(url) {
             const response = await fetch(API_BASE + url);
+            return response.json();
+        }
+
+        async function apiPost(url, payload) {
+            const response = await fetch(API_BASE + url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload || {})
+            });
+            return response.json();
+        }
+
+        async function apiPut(url, payload) {
+            const response = await fetch(API_BASE + url, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload || {})
+            });
+            return response.json();
+        }
+
+        async function apiDelete(url) {
+            const response = await fetch(API_BASE + url, { method: 'DELETE' });
             return response.json();
         }
 
@@ -795,9 +1100,9 @@ DASHBOARD_HTML = '''
             const hotWords = document.getElementById('hot-words');
             if (!hotWords || !Array.isArray(words) || !words.length) return;
             hotWords.innerHTML = words.slice(0, 8).map((word, index) => {
-                const size = [34, 30, 28, 24, 22, 20, 18, 18][index] || 18;
+                const size = [28, 24, 22, 20, 18, 17, 16, 16][index] || 16;
                 const color = ['#49cbff', '#4fbaff', '#6fcbff', '#2e8cff', '#87ddff'][index % 5];
-                return `<span style="font-size:${size}px;color:${color};margin-right:10px;">${word}</span>`;
+                return `<span class="hot-word-item" data-rank="${index + 1}" style="--size:${size}px;--accent:${color};">${escapeHtml(word)}</span>`;
             }).join('');
         }
 
@@ -886,15 +1191,15 @@ DASHBOARD_HTML = '''
             if (heat) heat.textContent = `热度：${level}（${value}）`;
             if (source) source.textContent = `来源：${sourceName}`;
             if (content) {
-                content.textContent = `${name} 当前舆情热度为 ${value}，主要讨论集中在教学质量、收费标准和服务反馈。` +
-                    `建议该地区校区优先处理高频投诉，并在 2 小时内完成首次公开响应。`;
+                content.textContent = `${name} 当前舆情热度为 ${value}，主要讨论集中在服务质量、业务评价和用户反馈。` +
+                    `建议该地区加强高频投诉处理，并在 2 小时内完成首次公开响应。`;
             }
 
             if (riskList) {
                 riskList.innerHTML = `
-                    <div class="risk-item">【高优】${name} 地区“收费标准”相关讨论持续增长，建议发布费用构成说明。</div>
-                    <div class="risk-item">【中优】${name} 家长群出现课程体验反馈分化，建议同步教研优化计划。</div>
-                    <div class="risk-item">【提示】${name} 正向内容可围绕“师资建设”和“课堂成果”加强传播。</div>
+                    <div class="risk-item">【高优】${name} 地区“价格标准”相关讨论持续增长，建议发布费用构成说明。</div>
+                    <div class="risk-item">【中优】${name} 用户社群出现课程体验反馈分化，建议同步教研优化计划。</div>
+                    <div class="risk-item">【建议】${name} 正向内容可围绕“师资建设”和“交互成果”加强传播。</div>
                 `;
             }
         }
@@ -1025,6 +1330,16 @@ DASHBOARD_HTML = '''
             trendChart.update();
         }
 
+        function updateTrendFromSeries(series) {
+            if (!Array.isArray(series) || !series.length) return;
+            const trend = {};
+            series.slice(-10).forEach((point) => {
+                const key = point.time || '-';
+                trend[key] = point.count || 0;
+            });
+            updateTrend(trend);
+        }
+
         function convertRealtimeToTrend(items) {
             const bucket = {};
             const now = new Date();
@@ -1069,6 +1384,497 @@ DASHBOARD_HTML = '''
                 const message = alert.message || alert.title || JSON.stringify(alert).slice(0, 80);
                 return `<div class="risk-item">${message}</div>`;
             }).join('');
+        }
+
+        function getSelectedPlatforms() {
+            const checked = Array.from(document.querySelectorAll('#pipeline-platforms input[type="checkbox"]:checked'));
+            const values = checked.map(item => item.value).filter(Boolean);
+            return values.length ? values : ['weibo', 'douyin', 'zhihu', 'baidu', 'tieba'];
+        }
+
+        function applyPipelinePreset(name, trigger) {
+            const preset = PIPELINE_PRESETS[name];
+            if (!preset) return;
+
+            const maxItemsEl = document.getElementById('pipeline-max-items');
+            if (maxItemsEl) {
+                maxItemsEl.value = String(preset.maxItems);
+            }
+
+            const platformInputs = document.querySelectorAll('#pipeline-platforms input[type="checkbox"]');
+            platformInputs.forEach((input) => {
+                input.checked = preset.platforms.includes(input.value);
+            });
+
+            document.querySelectorAll('#pipeline-presets .preset-btn').forEach((button) => {
+                button.classList.toggle('active', button === trigger || button.getAttribute('data-preset') === name);
+            });
+        }
+
+        function updateByPipelineResult(result) {
+            if (!result || !result.success) return;
+            latestPipelineResult = result;
+
+            document.getElementById('heat-total').textContent = (result.total_items || 0).toLocaleString('zh-CN');
+
+            const sentimentStat = result.analysis?.sentiment?.data?.statistics || {};
+            updateSentiment({
+                positive: sentimentStat.positive_count || 0,
+                neutral: sentimentStat.neutral_count || 0,
+                negative: sentimentStat.negative_count || 0
+            });
+
+            const trendSeries = result.analysis?.trend?.data?.time_series || [];
+            updateTrendFromSeries(trendSeries);
+
+            const riskFactors = result.analysis?.risk?.data?.risk_factors || [];
+            updateAlerts(riskFactors.map(item => ({ message: item })));
+
+            const hotWords = (result.wordcloud || []).slice(0, 8).map(item => item.name).filter(Boolean);
+            if (hotWords.length) updateHotWords(hotWords);
+
+            const reportFindings = result.report?.findings || [];
+            if (reportFindings.length) updateNews(reportFindings);
+        }
+
+        function renderGroupOverviewDrawer(data) {
+            const groups = data?.groups || [];
+            const rows = groups.map((item) => `
+                <tr>
+                    <td>${escapeHtml(item.name)}</td>
+                    <td>${item.monitor_count || 0}</td>
+                    <td>${item.heat || 0}</td>
+                    <td>${item.risk_score || 0}</td>
+                    <td>${Math.round((item.negative_ratio || 0) * 100)}%</td>
+                    <td>${escapeHtml((item.top_keywords || []).join('、') || '-')}</td>
+                </tr>
+            `).join('');
+
+            const html = `
+                <div class="drawer-card">
+                    <div class="drawer-card-title">分组风险对比</div>
+                    ${rows ? `
+                        <table class="drawer-table">
+                            <thead><tr><th>分组</th><th>对象数</th><th>热度</th><th>风险分</th><th>负面占比</th><th>关注词</th></tr></thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    ` : '<div class="drawer-empty">暂无分组监控数据，请先创建并执行监控对象</div>'}
+                </div>
+            `;
+            showDetailDrawer('监控分组总览', html);
+        }
+
+        function renderCompetitorOverviewDrawer(data) {
+            const groups = data?.groups || [];
+            const comparisons = data?.comparisons || [];
+            const baseGroup = data?.base_group || {};
+            const options = groups.map((item) => `
+                <option value="${escapeHtml(item.group_id || '')}" ${item.group_id === baseGroup.group_id ? 'selected' : ''}>${escapeHtml(item.name || '未命名分组')}</option>
+            `).join('');
+            const rows = comparisons.map((item) => `
+                <tr>
+                    <td>${escapeHtml(item.rival_name || '-')}</td>
+                    <td>${escapeHtml(item.status || '-')}</td>
+                    <td>${item.heat_gap > 0 ? '+' : ''}${item.heat_gap || 0}</td>
+                    <td>${item.risk_gap > 0 ? '+' : ''}${item.risk_gap || 0}</td>
+                    <td>${Math.round((item.negative_gap || 0) * 100)}%</td>
+                    <td>${escapeHtml((item.keyword_overlap || []).join('、') || '-')}</td>
+                </tr>
+            `).join('');
+            const strongestRival = data?.overview?.strongest_rival || '暂无';
+
+            const html = `
+                <div class="drawer-card">
+                    <div class="drawer-card-title">竞品对比设置</div>
+                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                        <select id="competitor-base-group" style="min-width:220px;padding:8px 10px;background:rgba(10,25,47,0.9);border:1px solid rgba(111,203,255,0.35);color:#dff5ff;border-radius:8px;" onchange="changeCompetitorBaseGroup(this.value)">
+                            ${options}
+                        </select>
+                        <span style="color:#8bbce6;">当前基准：${escapeHtml(baseGroup.name || '暂无')}</span>
+                        <span style="color:#8bbce6;">重点竞品：${escapeHtml(strongestRival)}</span>
+                    </div>
+                </div>
+                <div class="drawer-card">
+                    <div class="drawer-card-title">竞争态势摘要</div>
+                    <div style="color:#cfe8ff;line-height:1.8;">
+                        ${(comparisons[0]?.summary) ? escapeHtml(comparisons[0].summary) : '暂无竞品对比数据，请至少准备两个已执行的监控分组。'}
+                    </div>
+                </div>
+                <div class="drawer-card">
+                    <div class="drawer-card-title">竞品横向对比</div>
+                    ${rows ? `
+                        <table class="drawer-table">
+                            <thead><tr><th>竞品分组</th><th>态势</th><th>热度差</th><th>风险分差</th><th>负面差</th><th>共同关注</th></tr></thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    ` : '<div class="drawer-empty">暂无竞品对比数据，请先创建至少两个分组并执行监控对象</div>'}
+                </div>
+            `;
+            showDetailDrawer('竞品对比', html);
+        }
+
+        function changeCompetitorBaseGroup(groupId) {
+            competitorState.baseGroupId = groupId || '';
+            loadCompetitorOverviewData(competitorState.baseGroupId);
+        }
+
+        async function runDashboardPipeline() {
+            const keywordInput = document.getElementById('pipeline-keyword');
+            const maxItemsEl = document.getElementById('pipeline-max-items');
+            const keyword = (keywordInput?.value || '').trim();
+
+            if (!keyword) {
+                alert('请先输入关键词，例如公司名或产品名。');
+                return;
+            }
+
+            const payload = {
+                keyword,
+                max_items: Number(maxItemsEl?.value || 60),
+                platforms: getSelectedPlatforms()
+            };
+
+            const result = await safeApiPost('/api/dashboard/pipeline', payload);
+            if (!result || !result.success) {
+                const message = result?.message || '采集分析失败，请检查平台可用性后重试';
+                alert(message);
+                return;
+            }
+
+            updateByPipelineResult(result);
+            renderReportDrawer({ report: result.report, pipeline: result });
+        }
+
+        async function safeApiPost(url, payload) {
+            try {
+                return await apiPost(url, payload);
+            } catch (error) {
+                console.error(`请求失败: ${url}`, error);
+                return null;
+            }
+        }
+
+        async function safeApiPut(url, payload) {
+            try {
+                return await apiPut(url, payload);
+            } catch (error) {
+                console.error(`请求失败: ${url}`, error);
+                return null;
+            }
+        }
+
+        async function safeApiDelete(url) {
+            try {
+                return await apiDelete(url);
+            } catch (error) {
+                console.error(`请求失败: ${url}`, error);
+                return null;
+            }
+        }
+
+        function exportCurrentReport(format) {
+            const pipelineId = latestPipelineResult?.pipeline_id;
+            if (!pipelineId) {
+                alert('当前没有可导出的报告，请先执行一次采集分析。');
+                return;
+            }
+            window.open(`${API_BASE}/api/reports/${encodeURIComponent(pipelineId)}/export?format=${encodeURIComponent(format)}`, '_blank');
+        }
+
+        function getSelectedMonitor() {
+            return (monitorState.monitors || []).find(item => item.monitor_id === monitorState.selectedId) || null;
+        }
+
+        function populateMonitorForm(monitor) {
+            const setValue = (id, value) => {
+                const el = document.getElementById(id);
+                if (el) el.value = value || '';
+            };
+            setValue('monitor-id', monitor?.monitor_id || '');
+            setValue('monitor-name', monitor?.name || '');
+            setValue('monitor-group-id', monitor?.group_id || '');
+            setValue('monitor-tags', (monitor?.tags || []).join('，'));
+            setValue('monitor-keywords', (monitor?.keywords || []).join('，'));
+            setValue('monitor-platforms', (monitor?.platforms || []).join(','));
+            setValue('monitor-interval', monitor?.interval_seconds || 1800);
+            setValue('monitor-max-items', monitor?.max_items || 60);
+            setValue('monitor-negative-threshold', monitor?.thresholds?.negative_ratio ?? 0.3);
+            setValue('monitor-risk-threshold', monitor?.thresholds?.risk_score ?? 50);
+            setValue('monitor-min-items', monitor?.thresholds?.min_items ?? 30);
+        }
+
+        function bindMonitorDrawerEvents() {
+            document.querySelectorAll('.drawer-row[data-monitor-id]').forEach((row) => {
+                row.onclick = () => {
+                    monitorState.selectedId = row.getAttribute('data-monitor-id');
+                    renderMonitorDrawer();
+                };
+            });
+            const resetBtn = document.getElementById('monitor-reset-btn');
+            if (resetBtn) {
+                resetBtn.onclick = () => {
+                    monitorState.selectedId = null;
+                    renderMonitorDrawer();
+                };
+            }
+            const saveBtn = document.getElementById('monitor-save-btn');
+            if (saveBtn) saveBtn.onclick = saveMonitorFromForm;
+            const deleteBtn = document.getElementById('monitor-delete-btn');
+            if (deleteBtn) deleteBtn.onclick = deleteSelectedMonitor;
+            const runBtn = document.getElementById('monitor-run-btn');
+            if (runBtn) runBtn.onclick = runSelectedMonitor;
+            const groupSaveBtn = document.getElementById('monitor-group-save-btn');
+            if (groupSaveBtn) groupSaveBtn.onclick = saveMonitorGroupFromForm;
+            const groupDeleteBtn = document.getElementById('monitor-group-delete-btn');
+            if (groupDeleteBtn) groupDeleteBtn.onclick = deleteSelectedGroup;
+            const groupFilter = document.getElementById('monitor-group-filter');
+            if (groupFilter) {
+                groupFilter.onchange = () => {
+                    monitorState.selectedGroupId = groupFilter.value || '';
+                    renderMonitorDrawer();
+                };
+            }
+            document.querySelectorAll('.drawer-row[data-group-id]').forEach((row) => {
+                row.onclick = () => {
+                    monitorState.selectedGroupId = row.getAttribute('data-group-id') || '';
+                    renderMonitorDrawer();
+                };
+            });
+        }
+
+        async function saveMonitorGroupFromForm() {
+            const selectedGroupId = monitorState.selectedGroupId;
+            const payload = {
+                name: document.getElementById('monitor-group-name')?.value || '',
+                description: document.getElementById('monitor-group-description')?.value || '',
+                color: document.getElementById('monitor-group-color')?.value || '#2e8cff'
+            };
+            const result = selectedGroupId
+                ? await safeApiPut(`/api/monitor-groups/${encodeURIComponent(selectedGroupId)}`, payload)
+                : await safeApiPost('/api/monitor-groups', payload);
+            if (!result || !result.success) {
+                alert(result?.message || '保存分组失败');
+                return;
+            }
+            monitorState.selectedGroupId = result.group?.group_id || '';
+            await loadSettingsViewData();
+        }
+
+        async function deleteSelectedGroup() {
+            if (!monitorState.selectedGroupId) {
+                alert('请先选择一个分组。');
+                return;
+            }
+            const result = await safeApiDelete(`/api/monitor-groups/${encodeURIComponent(monitorState.selectedGroupId)}`);
+            if (!result || !result.success) {
+                alert(result?.message || '删除分组失败');
+                return;
+            }
+            monitorState.selectedGroupId = '';
+            await loadSettingsViewData();
+        }
+
+        async function saveMonitorFromForm() {
+            const monitorId = document.getElementById('monitor-id')?.value || '';
+            const payload = {
+                name: document.getElementById('monitor-name')?.value || '',
+                group_id: document.getElementById('monitor-group-id')?.value || null,
+                tags: document.getElementById('monitor-tags')?.value || '',
+                keywords: document.getElementById('monitor-keywords')?.value || '',
+                platforms: (document.getElementById('monitor-platforms')?.value || '').split(',').map(item => item.trim()).filter(Boolean),
+                interval_seconds: Number(document.getElementById('monitor-interval')?.value || 1800),
+                max_items: Number(document.getElementById('monitor-max-items')?.value || 60),
+                thresholds: {
+                    negative_ratio: Number(document.getElementById('monitor-negative-threshold')?.value || 0.3),
+                    risk_score: Number(document.getElementById('monitor-risk-threshold')?.value || 50),
+                    min_items: Number(document.getElementById('monitor-min-items')?.value || 30)
+                },
+                report_formats: ['docx', 'pdf'],
+                enabled: true
+            };
+            const result = monitorId
+                ? await safeApiPut(`/api/monitors/${encodeURIComponent(monitorId)}`, payload)
+                : await safeApiPost('/api/monitors', payload);
+            if (!result || !result.success) {
+                alert(result?.message || '保存监控对象失败');
+                return;
+            }
+            monitorState.selectedId = result.monitor?.monitor_id || null;
+            await loadSettingsViewData();
+        }
+
+        async function deleteSelectedMonitor() {
+            const selected = getSelectedMonitor();
+            if (!selected) {
+                alert('请先选择一个监控对象。');
+                return;
+            }
+            const result = await safeApiDelete(`/api/monitors/${encodeURIComponent(selected.monitor_id)}`);
+            if (!result || !result.success) {
+                alert(result?.message || '删除监控对象失败');
+                return;
+            }
+            monitorState.selectedId = null;
+            await loadSettingsViewData();
+        }
+
+        async function runSelectedMonitor() {
+            const selected = getSelectedMonitor();
+            if (!selected) {
+                alert('请先选择一个监控对象。');
+                return;
+            }
+            const result = await safeApiPost(`/api/monitors/${encodeURIComponent(selected.monitor_id)}/run`, {});
+            if (!result || !result.success) {
+                alert(result?.message || '执行监控对象失败');
+                return;
+            }
+            const latestPipelineId = (result.pipeline_ids || []).slice(-1)[0];
+            if (latestPipelineId && latestPipelineResult?.pipeline_id !== latestPipelineId) {
+                const dashboardData = await safeApiRequest('/api/dashboard/education');
+                if (dashboardData?.success) {
+                    const latest = dashboardData.dashboard?.latest_report;
+                    if (latest) latestPipelineResult = { report: latest, pipeline_id: latestPipelineId };
+                }
+            }
+            await loadSettingsViewData();
+            alert(`监控执行完成，生成 ${result.pipeline_ids?.length || 0} 份报告。`);
+        }
+
+        function renderMonitorDrawer() {
+            const selected = getSelectedMonitor();
+            const activeGroup = (monitorState.groups || []).find(item => item.group_id === monitorState.selectedGroupId) || null;
+            const groupOptions = ['<option value="">未分组</option>'].concat(
+                (monitorState.groups || []).map(group => {
+                    const selectedAttr = group.group_id === selected?.group_id ? 'selected' : '';
+                    return `<option value="${escapeHtml(group.group_id)}" ${selectedAttr}>${escapeHtml(group.name)}</option>`;
+                })
+            ).join('');
+            const groupRows = (monitorState.groups || []).map(group => {
+                const selectedClass = group.group_id === monitorState.selectedGroupId ? 'active' : '';
+                return `
+                    <tr class="drawer-row ${selectedClass}" data-group-id="${escapeHtml(group.group_id)}">
+                        <td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${escapeHtml(group.color)};"></span></td>
+                        <td>${escapeHtml(group.name)}</td>
+                        <td>${escapeHtml(group.description || '-')}</td>
+                    </tr>
+                `;
+            }).join('');
+            const filteredMonitors = (monitorState.monitors || []).filter(item => {
+                if (!monitorState.selectedGroupId) return true;
+                return item.group_id === monitorState.selectedGroupId;
+            });
+            const rows = filteredMonitors.map(item => {
+                const selectedClass = item.monitor_id === monitorState.selectedId ? 'active' : '';
+                return `
+                    <tr class="drawer-row ${selectedClass}" data-monitor-id="${escapeHtml(item.monitor_id)}">
+                        <td>${escapeHtml(item.name)}</td>
+                        <td>${escapeHtml((item.keywords || []).join(' / '))}</td>
+                        <td>${escapeHtml((item.platforms || []).join(', '))}</td>
+                        <td>${escapeHtml(item.last_status || 'idle')}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            const html = `
+                <div class="drawer-card">
+                    <div class="drawer-card-title">监控分组</div>
+                    ${groupRows ? `
+                        <table class="drawer-table">
+                            <thead><tr><th></th><th>名称</th><th>说明</th></tr></thead>
+                            <tbody>${groupRows}</tbody>
+                        </table>
+                    ` : '<div class="drawer-empty">暂无分组</div>'}
+                    <div class="form-grid" style="margin-top:10px;">
+                        <div>
+                            <label class="form-label">分组名称</label>
+                            <input class="drawer-input" id="monitor-group-name" value="${escapeHtml(activeGroup?.name || '')}" placeholder="如：品牌组" />
+                        </div>
+                        <div>
+                            <label class="form-label">分组颜色</label>
+                            <input class="drawer-input" id="monitor-group-color" value="${escapeHtml(activeGroup?.color || '#2e8cff')}" placeholder="#2e8cff" />
+                        </div>
+                        <div class="form-grid-full">
+                            <label class="form-label">分组说明</label>
+                            <input class="drawer-input" id="monitor-group-description" value="${escapeHtml(activeGroup?.description || '')}" placeholder="如：品牌声量与客诉监控" />
+                        </div>
+                    </div>
+                    <div class="drawer-toolbar" style="margin-top:10px;">
+                        <button class="drawer-btn" id="monitor-group-save-btn">保存分组</button>
+                        <button class="drawer-btn" id="monitor-group-delete-btn">删除分组</button>
+                    </div>
+                </div>
+                <div class="drawer-card">
+                    <div class="drawer-toolbar">
+                        <div class="drawer-card-title" style="margin:0;">监控对象管理</div>
+                        <select class="drawer-select" id="monitor-group-filter">
+                            <option value="">全部分组</option>
+                            ${(monitorState.groups || []).map(group => `<option value="${escapeHtml(group.group_id)}" ${group.group_id === monitorState.selectedGroupId ? 'selected' : ''}>${escapeHtml(group.name)}</option>`).join('')}
+                        </select>
+                        <button class="drawer-btn" id="monitor-reset-btn">新建</button>
+                    </div>
+                    ${rows ? `
+                        <table class="drawer-table">
+                            <thead><tr><th>名称</th><th>关键词</th><th>平台</th><th>状态</th></tr></thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    ` : '<div class="drawer-empty">暂无监控对象，请先创建</div>'}
+                </div>
+                <div class="drawer-card">
+                    <div class="drawer-card-title">监控对象配置</div>
+                    <input type="hidden" id="monitor-id" value="${escapeHtml(selected?.monitor_id || '')}" />
+                    <div class="form-grid">
+                        <div>
+                            <label class="form-label">名称</label>
+                            <input class="drawer-input" id="monitor-name" value="${escapeHtml(selected?.name || '')}" placeholder="如：品牌A客诉监控" />
+                        </div>
+                        <div>
+                            <label class="form-label">所属分组</label>
+                            <select class="drawer-select" id="monitor-group-id">${groupOptions}</select>
+                        </div>
+                        <div class="form-grid-full">
+                            <label class="form-label">标签</label>
+                            <input class="drawer-input" id="monitor-tags" value="${escapeHtml((selected?.tags || []).join('，'))}" placeholder="如：品牌，投诉，退款" />
+                        </div>
+                        <div>
+                            <label class="form-label">平台</label>
+                            <input class="drawer-input" id="monitor-platforms" value="${escapeHtml((selected?.platforms || ['weibo','zhihu','baidu']).join(','))}" placeholder="weibo,zhihu,baidu" />
+                        </div>
+                        <div class="form-grid-full">
+                            <label class="form-label">关键词</label>
+                            <textarea class="drawer-textarea" id="monitor-keywords" placeholder="多个关键词用逗号分隔">${escapeHtml((selected?.keywords || []).join('，'))}</textarea>
+                        </div>
+                        <div>
+                            <label class="form-label">监控间隔（秒）</label>
+                            <input class="drawer-input" id="monitor-interval" type="number" value="${escapeHtml(selected?.interval_seconds || 1800)}" />
+                        </div>
+                        <div>
+                            <label class="form-label">每平台采集量</label>
+                            <input class="drawer-input" id="monitor-max-items" type="number" value="${escapeHtml(selected?.max_items || 60)}" />
+                        </div>
+                        <div>
+                            <label class="form-label">负面占比阈值</label>
+                            <input class="drawer-input" id="monitor-negative-threshold" type="number" step="0.01" value="${escapeHtml(selected?.thresholds?.negative_ratio ?? 0.3)}" />
+                        </div>
+                        <div>
+                            <label class="form-label">风险分阈值</label>
+                            <input class="drawer-input" id="monitor-risk-threshold" type="number" step="1" value="${escapeHtml(selected?.thresholds?.risk_score ?? 50)}" />
+                        </div>
+                        <div>
+                            <label class="form-label">采集量阈值</label>
+                            <input class="drawer-input" id="monitor-min-items" type="number" step="1" value="${escapeHtml(selected?.thresholds?.min_items ?? 30)}" />
+                        </div>
+                    </div>
+                    <div class="drawer-toolbar" style="margin-top:10px;">
+                        <button class="drawer-btn" id="monitor-save-btn">保存</button>
+                        <button class="drawer-btn" id="monitor-run-btn">立即执行</button>
+                        <button class="drawer-btn" id="monitor-delete-btn">删除</button>
+                    </div>
+                </div>
+            `;
+            showDetailDrawer('系统设置 / 监控对象', html);
+            populateMonitorForm(selected);
+            bindMonitorDrawerEvents();
         }
 
         function escapeHtml(value) {
@@ -1282,11 +2088,68 @@ DASHBOARD_HTML = '''
         }
 
         function renderReportDrawer(reportData) {
+            const pipeline = reportData?.pipeline || latestPipelineResult;
+            const pipelineReport = pipeline?.report;
+
+            if (pipelineReport) {
+                const findings = (pipelineReport.findings || []).map(item => `<li>${escapeHtml(item)}</li>`).join('');
+                const recommendations = (pipelineReport.recommendations || []).map(item => `<li>${escapeHtml(item)}</li>`).join('');
+                const aiInsight = pipelineReport.ai_insight || {};
+                const aiActions = (aiInsight.action_recommendations || []).map(item => `<li>${escapeHtml(item)}</li>`).join('');
+                const aiTalkingPoints = (aiInsight.pr_talking_points || []).map(item => `<li>${escapeHtml(item)}</li>`).join('');
+
+                const html = `
+                    <div class="drawer-card">
+                        <div class="drawer-card-title">舆情/客诉分析报告</div>
+                        <div class="drawer-toolbar" style="margin-bottom:8px;">
+                            <button class="drawer-btn" onclick="exportCurrentReport('docx')">导出 Word</button>
+                            <button class="drawer-btn" onclick="exportCurrentReport('pdf')">导出 PDF</button>
+                        </div>
+                        <table class="drawer-table">
+                            <tbody>
+                                <tr><th>报告标题</th><td>${escapeHtml(pipelineReport.title || '-')}</td></tr>
+                                <tr><th>生成时间</th><td>${escapeHtml(pipelineReport.generated_at || '-')}</td></tr>
+                                <tr><th>关键词</th><td>${escapeHtml(pipeline?.keyword || '-')}</td></tr>
+                                <tr><th>平台</th><td>${escapeHtml((pipeline?.platforms || []).join(', ') || '-')}</td></tr>
+                                <tr><th>采集条数</th><td>${pipeline?.total_items || 0}</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="drawer-card">
+                        <div class="drawer-card-title">结论摘要</div>
+                        <div>${escapeHtml(pipelineReport.summary || '-')}</div>
+                    </div>
+                    <div class="drawer-card">
+                        <div class="drawer-card-title">关键发现</div>
+                        <ol style="padding-left: 18px; line-height: 1.7;">${findings || '<li>暂无</li>'}</ol>
+                    </div>
+                    <div class="drawer-card">
+                        <div class="drawer-card-title">参考建议</div>
+                        <ol style="padding-left: 18px; line-height: 1.7;">${recommendations || '<li>暂无</li>'}</ol>
+                    </div>
+                    <div class="drawer-card">
+                        <div class="drawer-card-title">AI 研判</div>
+                        <div><strong>摘要：</strong>${escapeHtml(aiInsight.executive_summary || '暂无 AI 摘要')}</div>
+                        <div style="margin-top:6px;"><strong>风险判断：</strong>${escapeHtml(aiInsight.risk_judgment || '暂无 AI 风险判断')}</div>
+                        <div style="margin-top:6px;"><strong>来源：</strong>${escapeHtml(aiInsight.source || 'unknown')}</div>
+                    </div>
+                    <div class="drawer-card">
+                        <div class="drawer-card-title">AI 处置建议</div>
+                        <ol style="padding-left: 18px; line-height: 1.7;">${aiActions || '<li>暂无</li>'}</ol>
+                    </div>
+                    <div class="drawer-card">
+                        <div class="drawer-card-title">AI 公关口径</div>
+                        <ol style="padding-left: 18px; line-height: 1.7;">${aiTalkingPoints || '<li>暂无</li>'}</ol>
+                    </div>
+                `;
+                showDetailDrawer('舆情报告明细', html);
+                return;
+            }
+
             const report = reportData?.report || {};
             const stat = report.statistics || {};
             const feature = report.features || {};
-
-            const html = `
+            const fallbackHtml = `
                 <div class="drawer-card">
                     <div class="drawer-card-title">系统报告摘要</div>
                     <table class="drawer-table">
@@ -1307,8 +2170,7 @@ DASHBOARD_HTML = '''
                     <div style="margin-top:6px;"><strong>分析：</strong>${(feature.analysis || []).join('、') || '-'}</div>
                 </div>
             `;
-
-            showDetailDrawer('舆情报告明细', html);
+            showDetailDrawer('舆情报告明细', fallbackHtml);
         }
 
         async function loadDashboardData() {
@@ -1325,6 +2187,13 @@ DASHBOARD_HTML = '''
                 updateTrend(dashboard.trend || {});
                 updateMapData(dashboard.province_heat || []);
                 updateAlerts(dashboard.alerts || []);
+                const cloud = dashboard.wordcloud || [];
+                if (cloud.length) {
+                    updateHotWords(cloud.slice(0, 8).map(item => item.name).filter(Boolean));
+                }
+                if (dashboard.latest_report && !latestPipelineResult) {
+                    latestPipelineResult = { success: true, report: dashboard.latest_report, keyword: '最近监测', platforms: [] };
+                }
 
                 const topRegion = (dashboard.province_heat || [])[0];
                 if (topRegion) {
@@ -1404,7 +2273,81 @@ DASHBOARD_HTML = '''
 
         async function loadReportViewData() {
             const reportData = await safeApiRequest('/api/report');
-            renderReportDrawer(reportData || {});
+            renderReportDrawer({ ...(reportData || {}), pipeline: latestPipelineResult });
+        }
+
+        async function loadGroupOverviewData() {
+            const data = await safeApiRequest('/api/dashboard/groups-overview');
+            if (!data || !data.success) {
+                updateNews(['暂无分组总览数据，请先在系统设置中创建并执行监控对象。']);
+                updateAlerts([{ message: '暂无分组风险数据' }]);
+                renderGroupOverviewDrawer({ groups: [] });
+                return;
+            }
+
+            document.getElementById('heat-total').textContent = `${data.overview?.group_count || 0}组 / ${data.overview?.monitor_count || 0}对象`;
+            updateNews(data.news || []);
+            updateTrend(data.trend || {});
+            updateAlerts(data.alerts || []);
+            updateHotWords(data.hot_words || []);
+
+            const top = data.detail || {};
+            const region = document.getElementById('ticker-region');
+            const heat = document.getElementById('ticker-heat');
+            const source = document.getElementById('ticker-source');
+            const content = document.getElementById('ticker-content');
+            if (region) region.textContent = `分组：${top.name || '暂无'}`;
+            if (heat) heat.textContent = `风险分：${top.risk_score || 0} / 负面占比：${Math.round((top.negative_ratio || 0) * 100)}%`;
+            if (source) source.textContent = `对象数：${top.monitor_count || 0} / 报告数：${top.pipeline_count || 0}`;
+            if (content) content.textContent = top.latest_summary || '暂无分组摘要，请先执行监控对象。';
+
+            renderGroupOverviewDrawer(data);
+        }
+
+        async function loadCompetitorOverviewData(baseGroupId) {
+            const targetGroupId = baseGroupId || competitorState.baseGroupId;
+            const query = targetGroupId ? `?base_group_id=${encodeURIComponent(targetGroupId)}` : '';
+            const data = await safeApiRequest(`/api/dashboard/competitor-overview${query}`);
+            if (!data || !data.success) {
+                updateNews(['暂无竞品对比数据，请先创建并执行至少两个监控分组。']);
+                updateAlerts([{ message: '暂无竞品风险对比数据' }]);
+                renderCompetitorOverviewDrawer({ groups: [], comparisons: [] });
+                return;
+            }
+
+            competitorState.baseGroupId = data.base_group?.group_id || '';
+            document.getElementById('heat-total').textContent = `${data.overview?.base_group || '暂无'} / ${data.overview?.rival_count || 0}个竞品`;
+            updateNews(data.news || []);
+            updateTrend(data.trend || {});
+            updateAlerts(data.alerts || []);
+            updateHotWords(data.hot_words || []);
+
+            const region = document.getElementById('ticker-region');
+            const heat = document.getElementById('ticker-heat');
+            const source = document.getElementById('ticker-source');
+            const content = document.getElementById('ticker-content');
+            if (region) region.textContent = `基准分组：${data.base_group?.name || '暂无'}`;
+            if (heat) heat.textContent = `重点竞品：${data.overview?.strongest_rival || '暂无'}`;
+            if (source) source.textContent = `竞品数量：${data.overview?.rival_count || 0}`;
+            if (content) content.textContent = data.comparisons?.[0]?.summary || '暂无竞品对比结论，请先执行更多分组监控。';
+
+            renderCompetitorOverviewDrawer(data);
+        }
+
+        async function loadSettingsViewData() {
+            const [groupsData, monitorsData] = await Promise.all([
+                safeApiRequest('/api/monitor-groups'),
+                safeApiRequest('/api/monitors')
+            ]);
+            monitorState.groups = groupsData?.success ? (groupsData.groups || []) : [];
+            monitorState.monitors = monitorsData?.success ? (monitorsData.monitors || []) : [];
+            if (monitorState.selectedId && !monitorState.monitors.find(item => item.monitor_id === monitorState.selectedId)) {
+                monitorState.selectedId = null;
+            }
+            if (monitorState.selectedGroupId && !monitorState.groups.find(item => item.group_id === monitorState.selectedGroupId)) {
+                monitorState.selectedGroupId = '';
+            }
+            renderMonitorDrawer();
         }
 
         async function loadIntelViewData() {
@@ -1445,6 +2388,16 @@ DASHBOARD_HTML = '''
                 return;
             }
 
+            if (view === 'group-overview') {
+                await loadGroupOverviewData();
+                return;
+            }
+
+            if (view === 'competitor-overview') {
+                await loadCompetitorOverviewData();
+                return;
+            }
+
             if (view === 'alert' || view === 'complaints') {
                 await loadAlertViewData();
                 if (view === 'complaints') {
@@ -1462,7 +2415,7 @@ DASHBOARD_HTML = '''
             }
 
             if (view === 'setting') {
-                hideDetailDrawer();
+                await loadSettingsViewData();
                 return;
             }
 

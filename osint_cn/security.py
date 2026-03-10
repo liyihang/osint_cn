@@ -12,7 +12,7 @@ import functools
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Callable, Any
-from flask import request, jsonify, g
+from flask import request, jsonify, g, current_app
 
 logger = logging.getLogger(__name__)
 
@@ -318,6 +318,9 @@ def rate_limit(limit: int = None, per_seconds: int = 60):
     def decorator(f: Callable) -> Callable:
         @functools.wraps(f)
         def decorated(*args, **kwargs):
+            if current_app and current_app.config.get('RATELIMIT_ENABLED', True) is False:
+                return f(*args, **kwargs)
+
             allowed, remaining, reset_time = rate_limiter.check(limit)
             
             # 添加限流相关响应头

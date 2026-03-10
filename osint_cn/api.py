@@ -2,12 +2,20 @@ import os
 import sys
 import logging
 import uuid
+import json
+import re
+import time
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from functools import wraps
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
+from pathlib import Path
 
-from flask import Flask, jsonify, request, render_template_string, g
+import requests
+
+from flask import Flask, jsonify, request, render_template_string, g, send_file
 from pydantic import ValidationError
 
 # 添加项目根目录到 Python 路径
@@ -43,7 +51,7 @@ from osint_cn.relation import (
     KnowledgeGraph, SocialNetworkAnalyzer
 )
 from osint_cn.alert import (
-    get_alert_manager, AlertManager, AlertLevel, AlertRule, RuleType
+    get_alert_manager, AlertManager, AlertLevel, AlertRule, RuleType, Alert, AlertStatus
 )
 from storage.service import (
     get_storage, CollectionRecord, CollectedItemRecord
@@ -121,6 +129,1070 @@ _init_background_services()
 # 数据存储（内存，生产环境应使用数据库）
 collected_data_store = {}
 analysis_results_store = {}
+
+# 仪表板一体化分析结果（内存）
+dashboard_pipeline_store = {}
+monitor_profiles_store = {}
+monitor_groups_store = {}
+
+
+@dataclass
+class MonitorGroup:
+    """监控对象分组。"""
+    group_id: str
+    name: str
+    description: str = ''
+    color: str = '#2e8cff'
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'group_id': self.group_id,
+            'name': self.name,
+            'description': self.description,
+            'color': self.color,
+            'created_at': self.created_at,
+            'updated_at': self.updated_at
+        }
+
+
+@dataclass
+class MonitorProfile:
+    """监控对象配置。"""
+    monitor_id: str
+    name: str
+    keywords: List[str]
+    platforms: List[str]
+    group_id: Optional[str] = None
+    tags: List[str] = field(default_factory=list)
+    interval_seconds: int = 1800
+    max_items: int = 60
+    thresholds: Dict[str, Any] = field(default_factory=dict)
+    report_formats: List[str] = field(default_factory=lambda: ['docx', 'pdf'])
+    enabled: bool = True
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    last_run_at: Optional[str] = None
+    last_status: str = 'idle'
+    last_pipeline_ids: List[str] = field(default_factory=list)
+    scheduler_job_id: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'monitor_id': self.monitor_id,
+            'name': self.name,
+            'keywords': self.keywords,
+            'platforms': self.platforms,
+            'group_id': self.group_id,
+            'tags': self.tags,
+            'interval_seconds': self.interval_seconds,
+            'max_items': self.max_items,
+            'thresholds': self.thresholds,
+            'report_formats': self.report_formats,
+            'enabled': self.enabled,
+            'created_at': self.created_at,
+            'updated_at': self.updated_at,
+            'last_run_at': self.last_run_at,
+            'last_status': self.last_status,
+            'last_pipeline_ids': self.last_pipeline_ids
+        }
+
+
+def _ensure_export_dir() -> Path:
+    export_dir = Path(os.getcwd()) / 'logs' / 'exports'
+    export_dir.mkdir(parents=True, exist_ok=True)
+    return export_dir
+
+
+def _normalize_keywords(keywords: Any) -> List[str]:
+    if isinstance(keywords, str):
+        parts = re.split(r'[,，\n]+', keywords)
+    else:
+        parts = keywords or []
+    normalized = []
+    for item in parts:
+        keyword = str(item or '').strip()
+        if keyword and keyword not in normalized:
+            normalized.append(keyword)
+    return normalized
+
+
+def _normalize_tags(tags: Any) -> List[str]:
+    if isinstance(tags, str):
+        parts = re.split(r'[,，\n]+', tags)
+    else:
+        parts = tags or []
+    normalized = []
+    for item in parts:
+        tag = str(item or '').strip()
+        if tag and tag not in normalized:
+            normalized.append(tag)
+    return normalized
+
+
+def _normalize_platforms(platforms: Optional[List[str]]) -> List[str]:
+    """标准化平台列表并过滤非法平台。"""
+    available = set(CollectorFactory.available_platforms())
+    if not platforms:
+        return ['weibo', 'zhihu', 'baidu']
+
+    normalized = []
+    for platform in platforms:
+        if not platform:
+            continue
+        key = str(platform).strip().lower()
+        if key in available and key not in normalized:
+            normalized.append(key)
+
+    if normalized:
+        return normalized
+    return ['weibo', 'zhihu', 'baidu']
+
+
+def _generate_wordcloud_from_items(items: List[Dict[str, Any]], top_k: int = 80) -> List[Dict[str, Any]]:
+    """根据采集内容生成词云数据。"""
+    text = ' '.join((item.get('content') or '').strip() for item in items)
+    if not text:
+        return []
+
+    frequencies = text_processor.word_frequency(text, top_k=top_k)
+    return [{'name': word, 'value': freq} for word, freq in frequencies if word]
+
+
+def _build_report_text(
+    keyword: str,
+    platforms: List[str],
+    total_items: int,
+    analysis: Dict[str, Any],
+    wordcloud: List[Dict[str, Any]],
+    ai_report: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """组装舆情/客诉报告主体。"""
+    sentiment = analysis.get('sentiment', {}).get('data', {}).get('statistics', {})
+    risk = analysis.get('risk', {}).get('data', {})
+    trend = analysis.get('trend', {}).get('data', {})
+
+    positive = sentiment.get('positive_count', 0)
+    negative = sentiment.get('negative_count', 0)
+    neutral = sentiment.get('neutral_count', 0)
+    risk_level = risk.get('risk_level', 'low')
+    risk_score = risk.get('risk_score', 0)
+    peak_time = trend.get('peak_time') or '未知'
+    peak_count = trend.get('peak_count', 0)
+
+    hot_words = [item.get('name') for item in wordcloud[:10] if item.get('name')]
+    risk_recommendations = risk.get('recommendations', [])
+
+    findings = [
+        f"本次监测关键词“{keyword}”共采集 {total_items} 条多渠道内容，覆盖平台：{', '.join(platforms)}。",
+        f"情绪结构：正面 {positive}、中立 {neutral}、负面 {negative}。",
+        f"风险等级：{risk_level}（风险分 {risk_score}），传播峰值时段：{peak_time}（{peak_count} 条）。",
+        f"高频关注词：{('、'.join(hot_words) if hot_words else '暂无明显热词')}。"
+    ]
+
+    recommendations = list(risk_recommendations)
+    if not recommendations:
+        recommendations = [
+            '建议建立 7x24 关键词监测与分级告警规则。',
+            '建议对高传播负面内容在 2 小时内完成首轮响应。',
+            '建议将客诉工单与舆情事件进行关联闭环追踪。'
+        ]
+
+    ai_report = ai_report or {}
+    ai_actions = ai_report.get('action_recommendations', [])
+    if ai_actions:
+        for item in ai_actions[:3]:
+            if item not in recommendations:
+                recommendations.append(item)
+
+    summary = (
+        f"围绕“{keyword}”的全网舆情总体风险为 {risk_level}，"
+        f"负面声量为 {negative} 条，建议聚焦高频客诉主题并快速响应。"
+    )
+
+    return {
+        'title': f"{keyword} 舆情与客诉分析报告",
+        'generated_at': datetime.now().isoformat(),
+        'summary': summary,
+        'findings': findings,
+        'recommendations': recommendations,
+        'ai_enhanced': bool(ai_report.get('enhanced')),
+        'ai_insight': {
+            'executive_summary': ai_report.get('executive_summary', ''),
+            'risk_judgment': ai_report.get('risk_judgment', ''),
+            'action_recommendations': ai_actions,
+            'pr_talking_points': ai_report.get('pr_talking_points', []),
+            'source': ai_report.get('source', 'rule_based')
+        }
+    }
+
+
+def _build_rule_based_ai_report(report_context: Dict[str, Any]) -> Dict[str, Any]:
+    """外部模型不可用时的规则兜底报告。"""
+    keyword = report_context.get('keyword', '目标对象')
+    risk = report_context.get('risk', {}).get('data', {})
+    risk_level = risk.get('risk_level', 'low')
+    risk_score = risk.get('risk_score', 0)
+    platforms = report_context.get('platforms', [])
+    wordcloud = report_context.get('wordcloud', [])
+    hot_words = [item.get('name') for item in wordcloud[:5] if item.get('name')]
+
+    risk_map = {
+        'critical': '事件已接近危机传播态势，应立即启动专项响应。',
+        'high': '负面扩散速度较快，需要统一口径并同步业务部门。',
+        'medium': '舆情已形成可见讨论面，建议尽快完成解释与安抚。',
+        'low': '当前风险可控，以持续监测和定点回应为主。'
+    }
+
+    return {
+        'enhanced': False,
+        'source': 'rule_based',
+        'executive_summary': (
+            f"围绕“{keyword}”的讨论已覆盖 {len(platforms)} 个渠道，"
+            f"当前风险等级为 {risk_level}，建议以监测和快速响应并行推进。"
+        ),
+        'risk_judgment': risk_map.get(risk_level, '当前风险可控，建议继续监测。') + f" 综合风险分为 {risk_score}。",
+        'action_recommendations': [
+            f"优先核查“{keyword}”相关客诉与负面反馈来源。",
+            '2小时内完成首轮回应，24小时内输出处理进展。',
+            '将客服、运营、品牌部门纳入同一事件协同群。'
+        ],
+        'pr_talking_points': [
+            f"我们已关注到与“{keyword}”相关的反馈，并已启动专项核查。",
+            '对于已确认的问题将尽快处理，并同步公开进展。',
+            f"针对高频关注点{('：' + '、'.join(hot_words)) if hot_words else ''}，将提供更明确说明。"
+        ]
+    }
+
+
+def _extract_json_object(content: str) -> Optional[Dict[str, Any]]:
+    """从模型文本中提取 JSON 对象。"""
+    if not content:
+        return None
+
+    stripped = content.strip()
+    try:
+        return json.loads(stripped)
+    except Exception:
+        pass
+
+    match = re.search(r'\{[\s\S]*\}', stripped)
+    if not match:
+        return None
+
+    try:
+        return json.loads(match.group(0))
+    except Exception:
+        return None
+
+
+def _normalize_text_list(lines: List[str], limit: int = 3) -> List[str]:
+    """清洗模型返回的项目列表。"""
+    results = []
+    for line in lines:
+        cleaned = re.sub(r'^[\-\*\d\.\)\s、]+', '', (line or '').strip())
+        cleaned = cleaned.strip('：:;； ')
+        if cleaned and cleaned not in results:
+            results.append(cleaned)
+        if len(results) >= limit:
+            break
+    return results
+
+
+def _extract_plaintext_ai_report(content: str, report_context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """尽量将普通文本回复解析为结构化 AI 报告。"""
+    if not content:
+        return None
+
+    text = content.strip()
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return None
+
+    section_aliases = {
+        'executive_summary': ['执行摘要', '摘要', '总结', '概述'],
+        'risk_judgment': ['风险判断', '风险研判', '风险评估', '研判'],
+        'action_recommendations': ['处置建议', '行动建议', '建议措施', '建议'],
+        'pr_talking_points': ['公关口径', '回应口径', '话术口径', '对外口径']
+    }
+    sections = {
+        'executive_summary': [],
+        'risk_judgment': [],
+        'action_recommendations': [],
+        'pr_talking_points': []
+    }
+
+    current_key = None
+    for line in lines:
+        matched_key = None
+        for key, aliases in section_aliases.items():
+            if any(line.startswith(alias) for alias in aliases):
+                matched_key = key
+                break
+
+        if matched_key:
+            current_key = matched_key
+            trailing = re.split(r'[：:]', line, maxsplit=1)
+            if len(trailing) == 2 and trailing[1].strip():
+                sections[current_key].append(trailing[1].strip())
+            continue
+
+        if current_key:
+            sections[current_key].append(line)
+
+    action_items = _normalize_text_list(sections['action_recommendations'])
+    pr_items = _normalize_text_list(sections['pr_talking_points'])
+
+    if not action_items:
+        numbered_lines = [line for line in lines if re.match(r'^[\d一二三四五六七八九十]+[\.、\)]', line)]
+        action_items = _normalize_text_list(numbered_lines)
+
+    paragraph_lines = [line for line in lines if not re.match(r'^[\-\*\d一二三四五六七八九十]+[\.、\)]', line)]
+    executive_summary = ' '.join(sections['executive_summary']).strip()
+    risk_judgment = ' '.join(sections['risk_judgment']).strip()
+
+    if not executive_summary and paragraph_lines:
+        executive_summary = paragraph_lines[0]
+    if not risk_judgment and len(paragraph_lines) > 1:
+        risk_judgment = paragraph_lines[1]
+
+    if not pr_items and action_items:
+        keyword = report_context.get('keyword', '相关问题')
+        pr_items = [
+            f'我们已关注到与“{keyword}”相关的反馈，并正在核查处理。',
+            '对已确认问题将尽快整改，并持续同步进展。',
+            '欢迎通过官方渠道反馈，我们会持续优化服务体验。'
+        ]
+
+    if not executive_summary and not risk_judgment and not action_items:
+        return None
+
+    return {
+        'enhanced': True,
+        'source': 'ai_text',
+        'executive_summary': executive_summary,
+        'risk_judgment': risk_judgment,
+        'action_recommendations': action_items[:3],
+        'pr_talking_points': pr_items[:3]
+    }
+
+
+def _try_generate_ai_report(report_context: Dict[str, Any]) -> Dict[str, Any]:
+    """尝试使用兼容 OpenAI 的接口生成结构化 AI 报告，失败则回退规则引擎。"""
+    api_key = os.getenv('OPENAI_API_KEY') or os.getenv('AI_API_KEY')
+    if not api_key:
+        return _build_rule_based_ai_report(report_context)
+
+    model = os.getenv('AI_MODEL', 'gpt-4o-mini')
+    base_url = os.getenv('AI_API_BASE', 'https://api.openai.com/v1').rstrip('/')
+    endpoint = f"{base_url}/chat/completions"
+
+    prompt = (
+        "你是中文舆情和客诉分析顾问。请严格输出 JSON 对象，不要输出 markdown。"
+        "JSON 必须包含以下字段：executive_summary(string), risk_judgment(string), "
+        "action_recommendations(array of string, 3 items), pr_talking_points(array of string, 3 items)。"
+        "内容要聚焦事件研判、业务处置、品牌公关口径，语言专业、简洁、可执行。"
+    )
+
+    payload = {
+        'model': model,
+        'messages': [
+            {'role': 'system', 'content': prompt},
+            {'role': 'user', 'content': json.dumps(report_context, ensure_ascii=False)}
+        ],
+        'temperature': 0.3,
+        'max_tokens': 320,
+        'response_format': {'type': 'json_object'}
+    }
+
+    headers = {
+        'Authorization': f'Bearer {api_key}',
+        'Content-Type': 'application/json'
+    }
+
+    try:
+        response = requests.post(endpoint, headers=headers, json=payload, timeout=25)
+        response.raise_for_status()
+        data = response.json()
+        content = (
+            data.get('choices', [{}])[0]
+            .get('message', {})
+            .get('content', '')
+            .strip()
+        )
+        parsed = _extract_json_object(content)
+        if not parsed:
+            plain_report = _extract_plaintext_ai_report(content, report_context)
+            if plain_report:
+                return plain_report
+            logger.warning('AI report returned non-JSON content, fallback to rule-based report')
+            return _build_rule_based_ai_report(report_context)
+
+        return {
+            'enhanced': True,
+            'source': 'ai',
+            'executive_summary': parsed.get('executive_summary', ''),
+            'risk_judgment': parsed.get('risk_judgment', ''),
+            'action_recommendations': list(parsed.get('action_recommendations', []))[:3],
+            'pr_talking_points': list(parsed.get('pr_talking_points', []))[:3]
+        }
+    except Exception as exc:
+        logger.warning(f"AI advice generation skipped: {exc}")
+        return _build_rule_based_ai_report(report_context)
+
+
+def _try_generate_ai_advice(report_context: Dict[str, Any]) -> Optional[str]:
+    """兼容旧逻辑：返回合并后的 AI 建议字符串。"""
+    ai_report = _try_generate_ai_report(report_context)
+    action_recommendations = ai_report.get('action_recommendations', [])
+    if action_recommendations:
+        return ' '.join(action_recommendations)
+    return ai_report.get('executive_summary') or None
+
+
+def _emit_monitor_alert(profile: MonitorProfile, keyword: str, pipeline_result: Dict[str, Any], reason: str, level: AlertLevel) -> None:
+    """为监控对象生成自定义预警。"""
+    summary = pipeline_result.get('report', {}).get('summary', '')
+    alert = Alert(
+        alert_id=f"monitor_{profile.monitor_id}_{uuid.uuid4().hex[:10]}",
+        rule_id=f"monitor_profile_{profile.monitor_id}",
+        level=level,
+        title=f"[{profile.name}] 监控阈值触发",
+        description=reason,
+        source=f"monitor:{profile.name}",
+        content=summary,
+        matched_keywords=[keyword],
+        metadata={
+            'monitor_id': profile.monitor_id,
+            'keyword': keyword,
+            'pipeline_id': pipeline_result.get('pipeline_id')
+        },
+        status=AlertStatus.ACTIVE
+    )
+    alert_manager.alerts[alert.alert_id] = alert
+    alert_manager.alert_history.append(alert)
+    alert_manager._alert_queue.put(alert)
+
+
+def _evaluate_monitor_thresholds(profile: MonitorProfile, keyword: str, pipeline_result: Dict[str, Any]) -> List[str]:
+    """检查监控对象阈值并触发预警。"""
+    thresholds = profile.thresholds or {}
+    analysis = pipeline_result.get('analysis', {})
+    sentiment_stats = analysis.get('sentiment', {}).get('data', {}).get('statistics', {})
+    distribution = sentiment_stats.get('distribution', {})
+    risk = analysis.get('risk', {}).get('data', {})
+    total_items = pipeline_result.get('total_items', 0)
+
+    triggered = []
+    negative_ratio = float(distribution.get('negative_ratio', 0) or 0)
+    risk_score = float(risk.get('risk_score', 0) or 0)
+    if thresholds.get('negative_ratio') is not None and negative_ratio >= float(thresholds['negative_ratio']):
+        reason = f"负面占比达到 {negative_ratio:.2%}，超过阈值 {float(thresholds['negative_ratio']):.2%}"
+        _emit_monitor_alert(profile, keyword, pipeline_result, reason, AlertLevel.WARNING)
+        triggered.append(reason)
+    if thresholds.get('risk_score') is not None and risk_score >= float(thresholds['risk_score']):
+        reason = f"风险分达到 {risk_score:.1f}，超过阈值 {float(thresholds['risk_score']):.1f}"
+        _emit_monitor_alert(profile, keyword, pipeline_result, reason, AlertLevel.DANGER)
+        triggered.append(reason)
+    if thresholds.get('min_items') is not None and total_items >= int(thresholds['min_items']):
+        reason = f"采集量达到 {total_items}，超过监控阈值 {int(thresholds['min_items'])}"
+        _emit_monitor_alert(profile, keyword, pipeline_result, reason, AlertLevel.INFO)
+        triggered.append(reason)
+    return triggered
+
+
+def _run_dashboard_pipeline_internal(keyword: str, platforms: List[str], max_items: int) -> Dict[str, Any]:
+    """复用的一体化分析流水线，供 API 与监控任务调用。"""
+    all_items: List[Dict[str, Any]] = []
+    platform_stats: Dict[str, Dict[str, Any]] = {}
+    errors = []
+    collection_started_at = time.perf_counter()
+
+    def collect_platform(platform: str) -> Dict[str, Any]:
+        started_at = time.perf_counter()
+        collector = CollectorFactory.create(platform)
+        items = collector.collect(keyword, limit=max_items)
+        normalized_items = []
+        collected_at = datetime.now().isoformat()
+        for item in items:
+            normalized_items.append({
+                'id': str(uuid.uuid4()),
+                'platform': item.platform,
+                'content': item.content,
+                'author': item.author,
+                'author_id': item.author_id,
+                'url': item.url,
+                'publish_time': item.publish_time.isoformat() if item.publish_time else None,
+                'likes': item.likes,
+                'comments': item.comments,
+                'shares': item.shares,
+                'metadata': item.metadata,
+                'collected_at': collected_at
+            })
+        duration_seconds = round(time.perf_counter() - started_at, 3)
+        return {
+            'platform': platform,
+            'items': normalized_items,
+            'duration_seconds': duration_seconds,
+        }
+
+    max_workers = max(1, min(len(platforms), 8))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {executor.submit(collect_platform, platform): platform for platform in platforms}
+        for future in as_completed(future_map):
+            platform = future_map[future]
+            try:
+                result = future.result()
+                normalized_items = result['items']
+                all_items.extend(normalized_items)
+                platform_stats[platform] = {
+                    'success': True,
+                    'items': len(normalized_items),
+                    'duration_seconds': result['duration_seconds']
+                }
+            except Exception as exc:
+                error_message = str(exc)
+                errors.append({'platform': platform, 'error': error_message})
+                platform_stats[platform] = {
+                    'success': False,
+                    'items': 0,
+                    'error': error_message
+                }
+
+    # 检查是否任何平台采集成功（无论是否返回数据）
+    any_platform_succeeded = any(ps.get('success', False) for ps in platform_stats.values())
+    
+    # 如果没有任何平台成功，返回失败
+    if not any_platform_succeeded:
+        return {
+            'success': False,
+            'message': '所有渠道采集失败，未获取有效数据',
+            'keyword': keyword,
+            'platforms': platforms,
+            'platform_stats': platform_stats,
+            'errors': errors
+        }
+
+    collection_id = str(uuid.uuid4())
+    collected_data_store[collection_id] = {
+        'platform': 'multi',
+        'keyword': keyword,
+        'platforms': platforms,
+        'collected_at': datetime.now().isoformat(),
+        'items': all_items
+    }
+
+    # 如果没有采集到数据，生成诊断报告而不是跳过
+    if not all_items:
+        analysis = {
+            'sentiment': {'positive': 0, 'neutral': 0, 'negative': 0},
+            'trend': {},
+            'risk': {'level': '低', 'score': 0, 'factors': []},
+            'relationship': {},
+            'summary': {
+                'total_items': 0,
+                'analysis_time': datetime.now().isoformat(),
+                'note': f'关键词"{keyword}"在{len([p for p in platform_stats.values() if p.get("success")])}个平台采集成功但无相关数据'
+            }
+        }
+        wordcloud = []
+        ai_report = f'关键词"{keyword}"暂无对应舆情数据。建议：1. 检查关键词拼写；2. 尝试相关词汇；3. 联系数据提供商补充覆盖。'
+    else:
+        analysis = analyzer.comprehensive_analysis(all_items)
+        wordcloud = _generate_wordcloud_from_items(all_items)
+        ai_report = _try_generate_ai_report({
+            'keyword': keyword,
+            'platforms': platforms,
+            'platform_stats': platform_stats,
+            'analysis_summary': analysis.get('summary', {}),
+            'risk': analysis.get('risk', {}),
+            'wordcloud': wordcloud
+        })
+
+    analysis_id = str(uuid.uuid4())
+    analysis_results_store[analysis_id] = {
+        'created_at': datetime.now().isoformat(),
+        'source_count': len(all_items),
+        'results': analysis
+    }
+
+    report_data = _build_report_text(
+        keyword=keyword,
+        platforms=platforms,
+        total_items=len(all_items),
+        analysis=analysis,
+        wordcloud=wordcloud,
+        ai_report=ai_report
+    )
+
+    pipeline_id = str(uuid.uuid4())
+    dashboard_pipeline_store[pipeline_id] = {
+        'created_at': datetime.now().isoformat(),
+        'keyword': keyword,
+        'platforms': platforms,
+        'collection_id': collection_id,
+        'analysis_id': analysis_id,
+        'report': report_data,
+        'wordcloud': wordcloud,
+        'platform_stats': platform_stats,
+        'collection_duration_seconds': round(time.perf_counter() - collection_started_at, 3)
+    }
+
+    return {
+        'success': True,
+        'pipeline_id': pipeline_id,
+        'keyword': keyword,
+        'platforms': platforms,
+        'collection_id': collection_id,
+        'analysis_id': analysis_id,
+        'platform_stats': platform_stats,
+        'collection_duration_seconds': round(time.perf_counter() - collection_started_at, 3),
+        'total_items': len(all_items),
+        'analysis': analysis,
+        'wordcloud': wordcloud,
+        'report': report_data,
+        'errors': errors
+    }
+
+
+def _schedule_monitor_profile(profile: MonitorProfile) -> None:
+    """将监控对象注册到 APScheduler。"""
+    if not getattr(scheduler, '_scheduler', None) or not profile.enabled:
+        return
+    job_id = f"monitor_profile_{profile.monitor_id}"
+    try:
+        scheduler._scheduler.remove_job(job_id)
+    except Exception:
+        pass
+    scheduler._scheduler.add_job(
+        func=_run_monitor_profile_once,
+        trigger='interval',
+        seconds=max(60, int(profile.interval_seconds)),
+        id=job_id,
+        replace_existing=True,
+        args=[profile.monitor_id]
+    )
+    profile.scheduler_job_id = job_id
+
+
+def _unschedule_monitor_profile(monitor_id: str) -> None:
+    job_id = f"monitor_profile_{monitor_id}"
+    if not getattr(scheduler, '_scheduler', None):
+        return
+    try:
+        scheduler._scheduler.remove_job(job_id)
+    except Exception:
+        pass
+
+
+def _run_monitor_profile_once(monitor_id: str) -> Dict[str, Any]:
+    """执行单个监控对象。"""
+    profile = monitor_profiles_store.get(monitor_id)
+    if not profile or not profile.enabled:
+        return {'success': False, 'message': 'monitor disabled or missing'}
+
+    pipeline_ids = []
+    triggered_reasons = []
+    last_result = None
+    for keyword in profile.keywords:
+        result = _run_dashboard_pipeline_internal(keyword, profile.platforms, profile.max_items)
+        last_result = result
+        if result.get('success'):
+            pipeline_ids.append(result.get('pipeline_id'))
+            triggered_reasons.extend(_evaluate_monitor_thresholds(profile, keyword, result))
+
+    profile.last_run_at = datetime.now().isoformat()
+    profile.updated_at = profile.last_run_at
+    profile.last_pipeline_ids = pipeline_ids[-10:]
+    profile.last_status = 'success' if pipeline_ids else 'failed'
+
+    return {
+        'success': bool(pipeline_ids),
+        'monitor_id': monitor_id,
+        'pipeline_ids': pipeline_ids,
+        'triggered_reasons': triggered_reasons,
+        'last_result': last_result
+    }
+
+
+def _export_report_file(pipeline_id: str, export_format: str) -> Path:
+    """导出报告文件。"""
+    pipeline = dashboard_pipeline_store.get(pipeline_id)
+    if not pipeline:
+        raise APIError('Pipeline not found', 404)
+
+    report = pipeline.get('report', {})
+    analysis_record = analysis_results_store.get(pipeline.get('analysis_id', ''), {})
+    analysis = analysis_record.get('results', {})
+    sentiment_stats = analysis.get('sentiment', {}).get('data', {}).get('statistics', {})
+    risk_data = analysis.get('risk', {}).get('data', {})
+    trend_data = analysis.get('trend', {}).get('data', {})
+    wordcloud = pipeline.get('wordcloud', [])
+    hot_words = '、'.join(item.get('name') for item in wordcloud[:10] if item.get('name')) or '暂无'
+    platform_stats = pipeline.get('platform_stats', {})
+    group_overview = _build_group_overview_payload()
+    competitor_overview = _build_competitor_overview_payload()
+    export_dir = _ensure_export_dir()
+    safe_keyword = re.sub(r'[^\w\u4e00-\u9fa5-]+', '_', pipeline.get('keyword', 'report'))
+    filename = f"{safe_keyword}_{pipeline_id[:8]}.{export_format}"
+    output_path = export_dir / filename
+
+    if export_format == 'docx':
+        from docx import Document
+        document = Document()
+        document.add_heading(report.get('title', '舆情分析报告'), 0)
+        document.add_paragraph('OSINT CN 智能舆情分析报告')
+        document.add_paragraph(f"生成时间：{report.get('generated_at', '-')}")
+        document.add_paragraph(f"监测关键词：{pipeline.get('keyword', '-')}")
+        document.add_paragraph(f"监测平台：{', '.join(pipeline.get('platforms', []))}")
+        document.add_page_break()
+        document.add_heading('一、执行摘要', level=1)
+        document.add_paragraph(report.get('summary', '-'))
+        document.add_heading('二、核心指标', level=1)
+        document.add_paragraph(f"采集总量：{analysis.get('summary', {}).get('total_items', 0)}")
+        document.add_paragraph(f"风险等级：{risk_data.get('risk_level', '-')}")
+        document.add_paragraph(f"风险分：{risk_data.get('risk_score', 0)}")
+        document.add_paragraph(
+            f"情绪分布：正面 {sentiment_stats.get('positive_count', 0)} / 中立 {sentiment_stats.get('neutral_count', 0)} / 负面 {sentiment_stats.get('negative_count', 0)}"
+        )
+        document.add_paragraph(f"传播峰值时段：{trend_data.get('peak_time', '-')}")
+        document.add_heading('摘要', level=1)
+        document.add_paragraph(report.get('summary', '-'))
+        document.add_heading('关键发现', level=1)
+        for item in report.get('findings', []):
+            document.add_paragraph(item, style='List Bullet')
+        document.add_heading('处置建议', level=1)
+        for item in report.get('recommendations', []):
+            document.add_paragraph(item, style='List Bullet')
+        ai_insight = report.get('ai_insight', {})
+        document.add_heading('AI 研判', level=1)
+        document.add_paragraph(ai_insight.get('executive_summary', '-'))
+        document.add_paragraph(ai_insight.get('risk_judgment', '-'))
+        document.add_heading('AI 公关口径', level=2)
+        for item in ai_insight.get('pr_talking_points', []):
+            document.add_paragraph(item, style='List Bullet')
+        document.add_heading('附录', level=1)
+        document.add_paragraph(f"高频热词：{hot_words}")
+        if platform_stats:
+            document.add_paragraph('平台采集明细：')
+            for platform, stats in platform_stats.items():
+                document.add_paragraph(f"{platform}: {stats.get('items', 0)} 条", style='List Bullet')
+        if group_overview.get('groups'):
+            document.add_heading('监控分组对比', level=2)
+            for item in group_overview.get('groups', [])[:5]:
+                document.add_paragraph(
+                    f"{item.get('name', '-')}: 热度 {item.get('heat', 0)}，风险分 {item.get('risk_score', 0)}，负面占比 {int((item.get('negative_ratio', 0) or 0) * 100)}%",
+                    style='List Bullet'
+                )
+        if competitor_overview.get('comparisons'):
+            document.add_heading('竞品对比摘要', level=2)
+            base_group = competitor_overview.get('base_group', {})
+            document.add_paragraph(f"对比基准：{base_group.get('name', '暂无')}")
+            for item in competitor_overview.get('comparisons', [])[:5]:
+                document.add_paragraph(
+                    f"对比 {item.get('rival_name', '-')}: 结论 {item.get('status', '-') }，热度差 {item.get('heat_gap', 0)}，风险分差 {item.get('risk_gap', 0)}，共同关注 {('、'.join(item.get('keyword_overlap', [])) or '暂无')}",
+                    style='List Bullet'
+                )
+        document.save(str(output_path))
+        return output_path
+
+    if export_format == 'pdf':
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+
+        font_candidates = [
+            '/System/Library/Fonts/PingFang.ttc',
+            '/System/Library/Fonts/STHeiti Light.ttc',
+            '/Library/Fonts/Arial Unicode.ttf'
+        ]
+        registered_font = 'Helvetica'
+        for candidate in font_candidates:
+            if Path(candidate).exists():
+                try:
+                    pdfmetrics.registerFont(TTFont('CustomCJK', candidate))
+                    registered_font = 'CustomCJK'
+                    break
+                except Exception:
+                    continue
+
+        styles = getSampleStyleSheet()
+        for style in styles.byName.values():
+            style.fontName = registered_font
+        doc = SimpleDocTemplate(str(output_path), pagesize=A4)
+        story = [
+            Paragraph(report.get('title', '舆情分析报告'), styles['Title']),
+            Spacer(1, 12),
+            Paragraph('OSINT CN 智能舆情分析报告', styles['Heading2']),
+            Spacer(1, 12),
+            Paragraph(f"生成时间：{report.get('generated_at', '-')}", styles['Normal']),
+            Paragraph(f"关键词：{pipeline.get('keyword', '-')}", styles['Normal']),
+            Paragraph(f"平台：{', '.join(pipeline.get('platforms', []))}", styles['Normal']),
+            Spacer(1, 12),
+            Paragraph('执行摘要', styles['Heading2']),
+            Paragraph(report.get('summary', '-'), styles['Normal']),
+            Spacer(1, 12),
+            Paragraph('核心指标', styles['Heading2']),
+            Paragraph(f"采集总量：{analysis.get('summary', {}).get('total_items', 0)}", styles['Normal']),
+            Paragraph(f"风险等级：{risk_data.get('risk_level', '-')} / 风险分：{risk_data.get('risk_score', 0)}", styles['Normal']),
+            Paragraph(
+                f"情绪分布：正面 {sentiment_stats.get('positive_count', 0)} / 中立 {sentiment_stats.get('neutral_count', 0)} / 负面 {sentiment_stats.get('negative_count', 0)}",
+                styles['Normal']
+            ),
+            Paragraph(f"传播峰值时段：{trend_data.get('peak_time', '-')}", styles['Normal']),
+            Spacer(1, 12),
+            Paragraph('关键发现', styles['Heading2'])
+        ]
+        for item in report.get('findings', []):
+            story.append(Paragraph(f"• {item}", styles['Normal']))
+        story.append(Spacer(1, 12))
+        story.append(Paragraph('处置建议', styles['Heading2']))
+        for item in report.get('recommendations', []):
+            story.append(Paragraph(f"• {item}", styles['Normal']))
+        ai_insight = report.get('ai_insight', {})
+        story.append(Spacer(1, 12))
+        story.append(Paragraph('AI 研判', styles['Heading2']))
+        story.append(Paragraph(ai_insight.get('executive_summary', '-'), styles['Normal']))
+        story.append(Paragraph(ai_insight.get('risk_judgment', '-'), styles['Normal']))
+        for item in ai_insight.get('pr_talking_points', []):
+            story.append(Paragraph(f"• {item}", styles['Normal']))
+        story.append(Spacer(1, 12))
+        story.append(Paragraph('附录', styles['Heading2']))
+        story.append(Paragraph(f"高频热词：{hot_words}", styles['Normal']))
+        for platform, stats in platform_stats.items():
+            story.append(Paragraph(f"• {platform}: {stats.get('items', 0)} 条", styles['Normal']))
+        if group_overview.get('groups'):
+            story.append(Spacer(1, 12))
+            story.append(Paragraph('监控分组对比', styles['Heading2']))
+            for item in group_overview.get('groups', [])[:5]:
+                story.append(Paragraph(
+                    f"• {item.get('name', '-')}: 热度 {item.get('heat', 0)}，风险分 {item.get('risk_score', 0)}，负面占比 {int((item.get('negative_ratio', 0) or 0) * 100)}%",
+                    styles['Normal']
+                ))
+        if competitor_overview.get('comparisons'):
+            story.append(Spacer(1, 12))
+            story.append(Paragraph('竞品对比摘要', styles['Heading2']))
+            base_group = competitor_overview.get('base_group', {})
+            story.append(Paragraph(f"对比基准：{base_group.get('name', '暂无')}", styles['Normal']))
+            for item in competitor_overview.get('comparisons', [])[:5]:
+                story.append(Paragraph(
+                    f"• 对比 {item.get('rival_name', '-')}: 结论 {item.get('status', '-')}，热度差 {item.get('heat_gap', 0)}，风险分差 {item.get('risk_gap', 0)}，共同关注 {('、'.join(item.get('keyword_overlap', [])) or '暂无')}",
+                    styles['Normal']
+                ))
+        doc.build(story)
+        return output_path
+
+    raise APIError('Unsupported export format', 400)
+
+
+def _build_group_overview_payload() -> Dict[str, Any]:
+    """构建监控分组总览数据。"""
+    group_profiles: Dict[str, Dict[str, Any]] = {}
+
+    def ensure_group(group_id: str, name: str, color: str = '#6fcbff') -> Dict[str, Any]:
+        if group_id not in group_profiles:
+            group_profiles[group_id] = {
+                'group_id': group_id,
+                'name': name,
+                'color': color,
+                'monitors': [],
+                'pipeline_ids': [],
+                'heat': 0,
+                'risk_scores': [],
+                'negative_ratios': [],
+                'word_counter': Counter(),
+                'latest_summary': '',
+                'latest_time': ''
+            }
+        return group_profiles[group_id]
+
+    group_lookup = {group_id: group for group_id, group in monitor_groups_store.items()}
+    for profile in monitor_profiles_store.values():
+        group_id = profile.group_id or 'ungrouped'
+        group_name = group_lookup[group_id].name if group_id in group_lookup else '未分组'
+        group_color = group_lookup[group_id].color if group_id in group_lookup else '#6fcbff'
+        bucket = ensure_group(group_id, group_name, group_color)
+        bucket['monitors'].append(profile.name)
+        bucket['pipeline_ids'].extend(profile.last_pipeline_ids)
+
+    group_items = []
+    trend = {}
+    alerts = []
+    for group_id, bucket in group_profiles.items():
+        unique_pipeline_ids = []
+        seen = set()
+        for pipeline_id in bucket['pipeline_ids']:
+            if pipeline_id and pipeline_id not in seen:
+                unique_pipeline_ids.append(pipeline_id)
+                seen.add(pipeline_id)
+
+        for pipeline_id in unique_pipeline_ids:
+            pipeline = dashboard_pipeline_store.get(pipeline_id)
+            if not pipeline:
+                continue
+            analysis = analysis_results_store.get(pipeline.get('analysis_id', ''), {}).get('results', {})
+            sentiment_stats = analysis.get('sentiment', {}).get('data', {}).get('statistics', {})
+            distribution = sentiment_stats.get('distribution', {})
+            risk_data = analysis.get('risk', {}).get('data', {})
+            bucket['heat'] += int(analysis.get('summary', {}).get('total_items', 0) or 0)
+            bucket['risk_scores'].append(float(risk_data.get('risk_score', 0) or 0))
+            bucket['negative_ratios'].append(float(distribution.get('negative_ratio', 0) or 0))
+            for item in pipeline.get('wordcloud', [])[:15]:
+                name = item.get('name')
+                value = int(item.get('value', 0) or 0)
+                if name:
+                    bucket['word_counter'][name] += value
+            bucket['latest_summary'] = pipeline.get('report', {}).get('summary', bucket['latest_summary'])
+            bucket['latest_time'] = max(bucket['latest_time'], pipeline.get('created_at', '') or '')
+
+        risk_avg = round(sum(bucket['risk_scores']) / len(bucket['risk_scores']), 2) if bucket['risk_scores'] else 0
+        negative_avg = round(sum(bucket['negative_ratios']) / len(bucket['negative_ratios']), 3) if bucket['negative_ratios'] else 0
+        top_keywords = [name for name, _ in bucket['word_counter'].most_common(6)]
+        item = {
+            'group_id': group_id,
+            'name': bucket['name'],
+            'color': bucket['color'],
+            'monitor_count': len(bucket['monitors']),
+            'pipeline_count': len(unique_pipeline_ids),
+            'heat': bucket['heat'],
+            'risk_score': risk_avg,
+            'negative_ratio': negative_avg,
+            'top_keywords': top_keywords,
+            'latest_summary': bucket['latest_summary'],
+            'latest_time': bucket['latest_time']
+        }
+        group_items.append(item)
+        trend[bucket['name']] = bucket['heat']
+        if risk_avg >= 50 or negative_avg >= 0.3:
+            alerts.append({
+                'message': f"{bucket['name']} 风险分 {risk_avg}，负面占比 {negative_avg:.1%}，建议优先关注。"
+            })
+
+    group_items.sort(key=lambda item: (item['risk_score'], item['heat']), reverse=True)
+    top_group = group_items[0] if group_items else None
+    news = [
+        f"{item['name']}：热度 {item['heat']}，风险分 {item['risk_score']}，关注词 {('、'.join(item['top_keywords']) or '暂无')}"
+        for item in group_items[:8]
+    ]
+
+    return {
+        'success': True,
+        'groups': group_items,
+        'overview': {
+            'group_count': len(group_items),
+            'monitor_count': len(monitor_profiles_store),
+            'top_group': top_group['name'] if top_group else '暂无',
+            'top_risk_score': top_group['risk_score'] if top_group else 0
+        },
+        'trend': trend,
+        'news': news,
+        'alerts': alerts,
+        'hot_words': top_group['top_keywords'] if top_group else [],
+        'detail': top_group or {}
+    }
+
+
+def _build_competitor_overview_payload(base_group_id: Optional[str] = None) -> Dict[str, Any]:
+    """构建监控分组竞品对比数据。"""
+    overview_payload = _build_group_overview_payload()
+    groups = overview_payload.get('groups', [])
+
+    if not groups:
+        return {
+            'success': True,
+            'groups': [],
+            'base_group': {},
+            'comparisons': [],
+            'overview': {
+                'base_group': '暂无',
+                'rival_count': 0,
+                'strongest_rival': '暂无'
+            },
+            'trend': {},
+            'news': ['暂无竞品对比数据，请先创建并执行至少两个监控分组。'],
+            'alerts': [],
+            'hot_words': [],
+            'detail': {}
+        }
+
+    base_group = next((item for item in groups if item.get('group_id') == base_group_id), None)
+    if not base_group:
+        base_group = groups[0]
+
+    comparisons = []
+    for rival in groups:
+        if rival.get('group_id') == base_group.get('group_id'):
+            continue
+
+        heat_gap = int((base_group.get('heat', 0) or 0) - (rival.get('heat', 0) or 0))
+        risk_gap = round((base_group.get('risk_score', 0) or 0) - (rival.get('risk_score', 0) or 0), 2)
+        negative_gap = round((base_group.get('negative_ratio', 0) or 0) - (rival.get('negative_ratio', 0) or 0), 3)
+        keyword_overlap = sorted(set(base_group.get('top_keywords', [])) & set(rival.get('top_keywords', [])))
+
+        if heat_gap >= 0 and risk_gap <= 0:
+            status = '领先'
+            summary = f"{base_group.get('name', '基准组')} 当前热度更高且风险更低。"
+        elif heat_gap < 0 and risk_gap > 0:
+            status = '承压'
+            summary = f"{rival.get('name', '竞品组')} 热度更高且风险更低，建议优先补位。"
+        else:
+            status = '胶着'
+            summary = f"{base_group.get('name', '基准组')} 与 {rival.get('name', '竞品组')} 处于拉锯状态。"
+
+        comparisons.append({
+            'rival_group_id': rival.get('group_id'),
+            'rival_name': rival.get('name'),
+            'status': status,
+            'summary': summary,
+            'heat_gap': heat_gap,
+            'risk_gap': risk_gap,
+            'negative_gap': negative_gap,
+            'base_heat': base_group.get('heat', 0),
+            'rival_heat': rival.get('heat', 0),
+            'base_risk_score': base_group.get('risk_score', 0),
+            'rival_risk_score': rival.get('risk_score', 0),
+            'base_negative_ratio': base_group.get('negative_ratio', 0),
+            'rival_negative_ratio': rival.get('negative_ratio', 0),
+            'keyword_overlap': keyword_overlap,
+            'rival_keywords': rival.get('top_keywords', [])
+        })
+
+    comparisons.sort(key=lambda item: (item['rival_heat'], -item['rival_risk_score']), reverse=True)
+    strongest_rival = comparisons[0] if comparisons else None
+    alerts = []
+    if strongest_rival and strongest_rival.get('status') == '承压':
+        alerts.append({
+            'message': f"{base_group.get('name', '基准组')} 相比 {strongest_rival.get('rival_name', '竞品组')} 处于承压状态，建议优先优化共同关注词相关议题。"
+        })
+
+    news = [
+        f"{item.get('rival_name', '竞品组')}：{item.get('summary', '-') } 共同关注 {('、'.join(item.get('keyword_overlap', [])) or '暂无')}"
+        for item in comparisons[:8]
+    ] or ['当前仅有一个监控分组，暂无法形成竞品对比。']
+
+    trend = {base_group.get('name', '基准组'): base_group.get('heat', 0)}
+    for item in comparisons[:6]:
+        trend[item.get('rival_name', '竞品组')] = item.get('rival_heat', 0)
+
+    return {
+        'success': True,
+        'groups': groups,
+        'base_group': base_group,
+        'comparisons': comparisons,
+        'overview': {
+            'base_group': base_group.get('name', '暂无'),
+            'rival_count': len(comparisons),
+            'strongest_rival': strongest_rival.get('rival_name', '暂无') if strongest_rival else '暂无'
+        },
+        'trend': trend,
+        'news': news,
+        'alerts': alerts,
+        'hot_words': base_group.get('top_keywords', []),
+        'detail': strongest_rival or {}
+    }
 
 
 # ============ 错误处理 ============
@@ -994,6 +2066,213 @@ def report():
     }), 200
 
 
+@app.route('/api/dashboard/pipeline', methods=['POST'])
+@require_json
+@optional_api_key
+@rate_limit(limit=12)
+def dashboard_pipeline():
+    """关键词驱动的一体化舆情流水线：采集 -> 分析 -> 词云 -> 报告。"""
+    req_data = request.json or {}
+
+    keyword = str(req_data.get('keyword', '')).strip()
+    if not keyword:
+        raise APIError('Missing required field: keyword', 400)
+
+    max_items = req_data.get('max_items', 60)
+    try:
+        max_items = int(max_items)
+    except Exception:
+        max_items = 60
+    max_items = max(5, min(max_items, 500))
+
+    platforms = _normalize_platforms(req_data.get('platforms'))
+    result = _run_dashboard_pipeline_internal(keyword, platforms, max_items)
+    return jsonify(result), (200 if result.get('success') else 502)
+
+
+@app.route('/api/reports/<pipeline_id>/export', methods=['GET'])
+@optional_api_key
+@rate_limit(limit=20)
+def export_pipeline_report(pipeline_id):
+    """导出分析报告，支持 docx/pdf。"""
+    export_format = (request.args.get('format') or 'docx').strip().lower()
+    output_path = _export_report_file(pipeline_id, export_format)
+    mimetype = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    if export_format == 'pdf':
+        mimetype = 'application/pdf'
+    return send_file(output_path, as_attachment=True, download_name=output_path.name, mimetype=mimetype)
+
+
+@app.route('/api/monitors', methods=['GET'])
+@optional_api_key
+@rate_limit(limit=60)
+def list_monitors():
+    group_id = request.args.get('group_id')
+    monitors = list(monitor_profiles_store.values())
+    if group_id:
+        monitors = [profile for profile in monitors if profile.group_id == group_id]
+    return jsonify({
+        'success': True,
+        'monitors': [profile.to_dict() for profile in monitors],
+        'count': len(monitors)
+    })
+
+
+@app.route('/api/monitor-groups', methods=['GET'])
+@optional_api_key
+@rate_limit(limit=60)
+def list_monitor_groups():
+    return jsonify({
+        'success': True,
+        'groups': [group.to_dict() for group in monitor_groups_store.values()],
+        'count': len(monitor_groups_store)
+    })
+
+
+@app.route('/api/monitor-groups', methods=['POST'])
+@require_json
+@optional_api_key
+@rate_limit(limit=20)
+def create_monitor_group():
+    data = request.json or {}
+    name = str(data.get('name', '')).strip()
+    if not name:
+        raise APIError('Missing required field: name', 400)
+    group = MonitorGroup(
+        group_id=str(uuid.uuid4()),
+        name=name,
+        description=str(data.get('description', '') or '').strip(),
+        color=str(data.get('color', '#2e8cff') or '#2e8cff').strip()
+    )
+    monitor_groups_store[group.group_id] = group
+    return jsonify({'success': True, 'group': group.to_dict()}), 201
+
+
+@app.route('/api/monitor-groups/<group_id>', methods=['PUT'])
+@require_json
+@optional_api_key
+@rate_limit(limit=20)
+def update_monitor_group(group_id):
+    group = monitor_groups_store.get(group_id)
+    if not group:
+        raise APIError('Monitor group not found', 404)
+    data = request.json or {}
+    if 'name' in data:
+        group.name = str(data.get('name') or '').strip() or group.name
+    if 'description' in data:
+        group.description = str(data.get('description') or '').strip()
+    if 'color' in data:
+        group.color = str(data.get('color') or group.color).strip() or group.color
+    group.updated_at = datetime.now().isoformat()
+    return jsonify({'success': True, 'group': group.to_dict()})
+
+
+@app.route('/api/monitor-groups/<group_id>', methods=['DELETE'])
+@optional_api_key
+@rate_limit(limit=20)
+def delete_monitor_group(group_id):
+    group = monitor_groups_store.pop(group_id, None)
+    if not group:
+        raise APIError('Monitor group not found', 404)
+    for profile in monitor_profiles_store.values():
+        if profile.group_id == group_id:
+            profile.group_id = None
+            profile.updated_at = datetime.now().isoformat()
+    return jsonify({'success': True, 'message': 'Monitor group deleted'})
+
+
+@app.route('/api/monitors', methods=['POST'])
+@require_json
+@optional_api_key
+@rate_limit(limit=20)
+def create_monitor():
+    data = request.json or {}
+    name = str(data.get('name', '')).strip()
+    keywords = _normalize_keywords(data.get('keywords'))
+    platforms = _normalize_platforms(data.get('platforms'))
+    if not name:
+        raise APIError('Missing required field: name', 400)
+    if not keywords:
+        raise APIError('Missing required field: keywords', 400)
+
+    profile = MonitorProfile(
+        monitor_id=str(uuid.uuid4()),
+        name=name,
+        keywords=keywords,
+        platforms=platforms,
+        group_id=(str(data.get('group_id')).strip() if data.get('group_id') else None),
+        tags=_normalize_tags(data.get('tags')),
+        interval_seconds=max(60, int(data.get('interval_seconds', 1800))),
+        max_items=max(5, min(int(data.get('max_items', 60)), 500)),
+        thresholds=data.get('thresholds', {}),
+        report_formats=data.get('report_formats', ['docx', 'pdf']),
+        enabled=bool(data.get('enabled', True))
+    )
+    monitor_profiles_store[profile.monitor_id] = profile
+    if profile.enabled:
+        _schedule_monitor_profile(profile)
+
+    return jsonify({'success': True, 'monitor': profile.to_dict()}), 201
+
+
+@app.route('/api/monitors/<monitor_id>', methods=['PUT'])
+@require_json
+@optional_api_key
+@rate_limit(limit=20)
+def update_monitor(monitor_id):
+    profile = monitor_profiles_store.get(monitor_id)
+    if not profile:
+        raise APIError('Monitor not found', 404)
+    data = request.json or {}
+    if 'name' in data:
+        profile.name = str(data.get('name') or '').strip() or profile.name
+    if 'keywords' in data:
+        profile.keywords = _normalize_keywords(data.get('keywords')) or profile.keywords
+    if 'platforms' in data:
+        profile.platforms = _normalize_platforms(data.get('platforms'))
+    if 'group_id' in data:
+        profile.group_id = str(data.get('group_id') or '').strip() or None
+    if 'tags' in data:
+        profile.tags = _normalize_tags(data.get('tags'))
+    if 'interval_seconds' in data:
+        profile.interval_seconds = max(60, int(data.get('interval_seconds', profile.interval_seconds)))
+    if 'max_items' in data:
+        profile.max_items = max(5, min(int(data.get('max_items', profile.max_items)), 500))
+    if 'thresholds' in data:
+        profile.thresholds = data.get('thresholds', {})
+    if 'report_formats' in data:
+        profile.report_formats = data.get('report_formats') or profile.report_formats
+    if 'enabled' in data:
+        profile.enabled = bool(data.get('enabled'))
+    profile.updated_at = datetime.now().isoformat()
+    if profile.enabled:
+        _schedule_monitor_profile(profile)
+    else:
+        _unschedule_monitor_profile(profile.monitor_id)
+    return jsonify({'success': True, 'monitor': profile.to_dict()})
+
+
+@app.route('/api/monitors/<monitor_id>', methods=['DELETE'])
+@optional_api_key
+@rate_limit(limit=20)
+def delete_monitor(monitor_id):
+    profile = monitor_profiles_store.pop(monitor_id, None)
+    if not profile:
+        raise APIError('Monitor not found', 404)
+    _unschedule_monitor_profile(monitor_id)
+    return jsonify({'success': True, 'message': 'Monitor deleted'})
+
+
+@app.route('/api/monitors/<monitor_id>/run', methods=['POST'])
+@optional_api_key
+@rate_limit(limit=20)
+def run_monitor(monitor_id):
+    result = _run_monitor_profile_once(monitor_id)
+    if not result.get('success'):
+        return jsonify(result), 404
+    return jsonify(result)
+
+
 @app.route('/api/dashboard/education', methods=['GET'])
 @optional_api_key
 @rate_limit(limit=60)
@@ -1088,6 +2367,16 @@ def education_dashboard_data():
     except Exception:
         active_alerts = []
 
+    latest_pipeline = None
+    if dashboard_pipeline_store:
+        latest_pipeline = max(
+            dashboard_pipeline_store.values(),
+            key=lambda x: x.get('created_at', '')
+        )
+
+    latest_wordcloud = latest_pipeline.get('wordcloud', []) if latest_pipeline else []
+    latest_report = latest_pipeline.get('report', {}) if latest_pipeline else {}
+
     alerts_payload = []
     for alert in (active_alerts or [])[:5]:
         if isinstance(alert, dict):
@@ -1117,9 +2406,28 @@ def education_dashboard_data():
                 {'name': name, 'value': value * 120}
                 for name, value in province_counter.most_common()
             ],
-            'alerts': alerts_payload
+            'alerts': alerts_payload,
+            'wordcloud': latest_wordcloud[:40],
+            'latest_report': latest_report
         }
     })
+
+
+@app.route('/api/dashboard/groups-overview', methods=['GET'])
+@optional_api_key
+@rate_limit(limit=60)
+def dashboard_groups_overview():
+    """监控分组总览数据。"""
+    return jsonify(_build_group_overview_payload())
+
+
+@app.route('/api/dashboard/competitor-overview', methods=['GET'])
+@optional_api_key
+@rate_limit(limit=60)
+def dashboard_competitor_overview():
+    """监控分组竞品对比数据。"""
+    base_group_id = request.args.get('base_group_id', '').strip() or None
+    return jsonify(_build_competitor_overview_payload(base_group_id=base_group_id))
 
 
 # ============ 分析结果查询 ============

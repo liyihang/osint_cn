@@ -12,6 +12,9 @@ dist/
 venv/
 ENV/
 env/
+.env
+.env.*
+!.env.example
 
 # IDEs and editors
 .idea/
