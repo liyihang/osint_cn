@@ -260,6 +260,639 @@ def _generate_wordcloud_from_items(items: List[Dict[str, Any]], top_k: int = 80)
     return [{'name': word, 'value': freq} for word, freq in frequencies if word]
 
 
+def _build_report_html(
+    keyword: str,
+    platforms: List[str],
+    total_items: int,
+    analysis: Dict[str, Any],
+    wordcloud: List[Dict[str, Any]],
+    ai_report: Optional[Dict[str, Any]] = None
+) -> str:
+    """生成专业的HTML报告，格式与参考模板相同。"""
+    # 提取数据
+    sentiment = analysis.get('sentiment', {}).get('data', {}).get('statistics', {})
+    risk = analysis.get('risk', {}).get('data', {})
+    trend = analysis.get('trend', {}).get('data', {})
+
+    positive = sentiment.get('positive_count', 0)
+    negative = sentiment.get('negative_count', 0)
+    neutral = sentiment.get('neutral_count', 0)
+    risk_level = risk.get('risk_level', 'low')
+    risk_score = risk.get('risk_score', 0)
+    peak_time = trend.get('peak_time') or '未知'
+    peak_count = trend.get('peak_count', 0)
+
+    hot_words = [item.get('name') for item in wordcloud[:10] if item.get('name')]
+    risk_recommendations = risk.get('recommendations', [])
+
+    # 处理 ai_report
+    ai_report = ai_report or {}
+    if isinstance(ai_report, str):
+        ai_summary = ''
+    else:
+        ai_summary = ai_report.get('executive_summary', '') if isinstance(ai_report, dict) else ''
+
+    # 生成Sentiment数据用于Chart.js
+    sentiment_data = {
+        'positive': positive,
+        'neutral': neutral,
+        'negative': negative
+    }
+
+    # 计算比例
+    total = positive + negative + neutral + 1
+    positive_ratio = (positive / total) * 100
+    neutral_ratio = (neutral / total) * 100
+    negative_ratio = (negative / total) * 100
+
+    # 生成KPI数据
+    kpi_cards = [
+        {'label': '正向评论', 'value': positive, 'change': f"+{positive}", 'type': 'positive'},
+        {'label': '中立评论', 'value': neutral, 'change': f"{neutral}", 'type': 'neutral'},
+        {'label': '负向评论', 'value': negative, 'change': f"{negative}", 'type': 'negative'},
+        {'label': '总体样本', 'value': total_items, 'change': f"同比采集", 'type': 'primary'},
+        {'label': '风险等级', 'value': risk_level.upper(), 'change': f"分值 {risk_score}", 'type': 'risk'},
+        {'label': '覆盖平台', 'value': len(platforms), 'change': f"{', '.join(platforms[:2])}", 'type': 'primary'},
+    ]
+
+    # 生成热词列表
+    hot_words_html = ', '.join(hot_words) if hot_words else '暂无明显热词'
+
+    # 定义平台描述（在f-string外部）
+    platform_desc_dict = {
+        'weibo': '国内最大的微博社交平台，舆论传播的主阵地',
+        'douyin': '短视频平台，情绪传播最速渠道',
+        'kuaishou': '快手短视频平台，下沉市场重要渠道',
+        'zhihu': '知识问答社区，深度讨论的重要阵地',
+        'baidu': '百度搜索与百家号，信息整合平台',
+        'wechat': '微信公众号与朋友圈，熟人网络传播',
+        'xiaohongshu': '小红书社区，Z世代用户集中地',
+        'bilibili': 'B站视频社区，弹幕文化与亚文化阵地',
+        'tieba': '百度贴吧，垂直社区讨论平台',
+        'toutiao': '今日头条，信息流推荐平台'
+    }
+
+    # 生成平台HTML
+    platform_rows_html = ''
+    for platform in platforms:
+        desc = platform_desc_dict.get(platform, '社交媒体平台')
+        platform_rows_html += f"""                            <tr>
+                                <td><strong>{platform}</strong></td>
+                                <td>{desc}</td>
+                            </tr>
+"""
+
+    # 生成AI洞察块
+    ai_insight_html = ''
+    if ai_summary:
+        ai_insight_html = f'<div class="highlight-box"><h4>AI智能分析洞察</h4><p>{ai_summary}</p></div>'
+
+    html = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{keyword} - 舆情与客诉分析报告</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <style>
+        :root {{
+            --primary-color: #2c3e50;
+            --accent-color: #3498db;
+            --background-color: #ffffff;
+            --text-color: #2c3e50;
+            --secondary-color: #7f8c8d;
+            --card-background: #f8f9fa;
+            --border-color: #e1e8ed;
+            --success-color: #27ae60;
+            --warning-color: #f39c12;
+            --danger-color: #c0392b;
+            --table-header-bg: #ecf0f1;
+            --code-bg: #f5f5f5;
+            --quote-border: #bdc3c7;
+        }}
+
+        [data-theme="dark"] {{
+            --primary-color: #ecf0f1;
+            --accent-color: #3498db;
+            --background-color: #1a1a1a;
+            --text-color: #ecf0f1;
+            --secondary-color: #bdc3c7;
+            --card-background: #2a2a2a;
+            --border-color: #444444;
+            --table-header-bg: #333333;
+            --code-bg: #2a2a2a;
+            --quote-border: #555555;
+        }}
+
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+
+        html {{
+            scroll-behavior: smooth;
+        }}
+
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            transition: background-color 0.3s, color 0.3s;
+        }}
+
+        .container {{
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }}
+
+        header {{
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--accent-color) 100%);
+            color: white;
+            padding: 40px 0;
+            margin-bottom: 40px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }}
+
+        .controls {{
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-bottom: 20px;
+        }}
+
+        .control-btn {{
+            padding: 8px 16px;
+            background-color: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s;
+        }}
+
+        .control-btn:hover {{
+            background-color: rgba(255,255,255,0.3);
+            border-color: rgba(255,255,255,0.5);
+        }}
+
+        .report-title {{
+            font-size: 2.5em;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }}
+
+        .report-subtitle {{
+            font-size: 1.1em;
+            opacity: 0.9;
+        }}
+
+        main {{
+            padding: 20px 0;
+        }}
+
+        .toc {{
+            background-color: var(--card-background);
+            border: 1px solid var(--border-color);
+            padding: 30px;
+            border-radius: 8px;
+            margin-bottom: 40px;
+        }}
+
+        .toc h2 {{
+            font-size: 1.3em;
+            margin-bottom: 20px;
+            color: var(--primary-color);
+        }}
+
+        .toc ul {{
+            list-style: none;
+        }}
+
+        .toc li {{
+            margin: 10px 0;
+        }}
+
+        .toc > ul > li {{
+            margin-left: 0;
+        }}
+
+        .toc > ul > li > ul > li {{
+            margin-left: 20px;
+            font-size: 0.95em;
+        }}
+
+        .toc a {{
+            color: var(--accent-color);
+            text-decoration: none;
+            transition: color 0.3s;
+        }}
+
+        .toc a:hover {{
+            color: var(--primary-color);
+            text-decoration: underline;
+        }}
+
+        .content-section {{
+            background-color: var(--card-background);
+            border: 1px solid var(--border-color);
+            padding: 30px;
+            margin-bottom: 30px;
+            border-radius: 8px;
+        }}
+
+        h1 {{
+            font-size: 2em;
+            margin-bottom: 20px;
+            color: var(--primary-color);
+            border-bottom: 3px solid var(--accent-color);
+            padding-bottom: 10px;
+        }}
+
+        h2 {{
+            font-size: 1.6em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            color: var(--primary-color);
+        }}
+
+        h3 {{
+            font-size: 1.2em;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            color: var(--accent-color);
+        }}
+
+        h4 {{
+            font-size: 1.05em;
+            margin-top: 15px;
+            margin-bottom: 10px;
+            color: var(--secondary-color);
+            font-weight: 600;
+        }}
+
+        p {{
+            margin-bottom: 15px;
+            line-height: 1.8;
+        }}
+
+        ul, ol {{
+            margin-left: 30px;
+            margin-bottom: 15px;
+        }}
+
+        li {{
+            margin-bottom: 8px;
+        }}
+
+        .chart-container {{
+            position: relative;
+            margin: 30px auto;
+            height: 400px;
+            width: 100%;
+            max-width: 800px;
+        }}
+
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 2em;
+            font-size: 0.95em;
+        }}
+
+        th, td {{
+            padding: 12px 15px;
+            border: 1px solid var(--border-color);
+            text-align: left;
+        }}
+
+        th {{
+            background-color: var(--table-header-bg);
+            font-weight: 600;
+        }}
+
+        tr:nth-child(even) {{
+            background-color: var(--code-bg);
+        }}
+
+        blockquote {{
+            border-left: 5px solid var(--quote-border);
+            padding: 15px 20px;
+            margin: 20px 0;
+            background-color: var(--code-bg);
+            font-style: italic;
+            color: var(--secondary-color);
+        }}
+
+        .highlight-box {{
+            background-color: rgba(52, 152, 219, 0.1);
+            border: 1px solid rgba(52, 152, 219, 0.3);
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }}
+
+        .highlight-box h4 {{
+            color: var(--accent-color);
+            margin-top: 0;
+        }}
+
+        .kpi-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }}
+
+        .kpi-card {{
+            background-color: var(--background-color);
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }}
+
+        .kpi-value {{
+            font-size: 2.2em;
+            font-weight: 700;
+            color: var(--accent-color);
+            margin-bottom: 5px;
+        }}
+
+        .kpi-label {{
+            font-size: 0.95em;
+            color: var(--secondary-color);
+            margin-bottom: 8px;
+        }}
+
+        .kpi-change {{
+            font-size: 0.9em;
+            font-weight: 500;
+        }}
+
+        .kpi-change.positive {{ color: var(--success-color); }}
+        .kpi-change.negative {{ color: var(--danger-color); }}
+        .kpi-change.neutral {{ color: var(--secondary-color); }}
+
+        .engine-perspective {{
+            border: 1px dashed var(--border-color);
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+            background-color: rgba(52, 152, 219, 0.05);
+        }}
+
+        .engine-name {{
+            font-weight: bold;
+            color: var(--accent-color);
+            display: block;
+            margin-bottom: 10px;
+            font-size: 0.9em;
+        }}
+
+        @media (max-width: 768px) {{
+            .report-title {{ font-size: 2em; }}
+            .report-subtitle {{ font-size: 1em; }}
+            .controls {{ position: static; margin-top: 20px; justify-content: center; }}
+            .content-section, .toc {{ padding: 20px; }}
+            h1 {{ font-size: 1.8em; }}
+            h2 {{ font-size: 1.5em; }}
+            h3 {{ font-size: 1.2em; }}
+            .chart-container {{ max-width: 100%; }}
+            .kpi-grid {{ grid-template-columns: 1fr; }}
+        }}
+
+        @media print {{
+            body {{
+                --background-color: #ffffff;
+                --text-color: #000000;
+                --card-background: #ffffff;
+                --border-color: #cccccc;
+                --primary-color: #000000;
+                --secondary-color: #333333;
+                --accent-color: #000000;
+                box-shadow: none;
+            }}
+            header, .controls, .toc {{
+                display: none;
+            }}
+            .content-section {{
+                box-shadow: none;
+                border: 1px solid #ccc;
+                page-break-inside: avoid;
+            }}
+            .chart-container {{
+                page-break-inside: avoid;
+            }}
+            table, blockquote {{
+                page-break-inside: avoid;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="controls">
+                <button id="theme-toggle" class="control-btn" onclick="toggleTheme()">暗色模式</button>
+                <button id="print-btn" class="control-btn" onclick="window.print()">打印/导出PDF</button>
+            </div>
+            <h1 class="report-title">{keyword} 舆情与客诉分析报告</h1>
+            <p class="report-subtitle">基于多渠道数据采集与深度AI分析的综合评估</p>
+        </header>
+
+        <main>
+            <nav class="toc" id="table-of-contents">
+                <h2>报告目录</h2>
+                <ul>
+                    <li><a href="#section-1">1. 摘要与核心指标</a>
+                        <ul>
+                            <li><a href="#section-1-1">1.1 监测概览</a></li>
+                            <li><a href="#section-1-2">1.2 关键指标表现</a></li>
+                        </ul>
+                    </li>
+                    <li><a href="#section-2">2. 情感与分布分析</a>
+                        <ul>
+                            <li><a href="#section-2-1">2.1 情感结构</a></li>
+                            <li><a href="#section-2-2">2.2 渠道分布</a></li>
+                            <li><a href="#section-2-3">2.3 热点词汇</a></li>
+                        </ul>
+                    </li>
+                    <li><a href="#section-3">3. 风险评估与建议</a>
+                        <ul>
+                            <li><a href="#section-3-1">3.1 风险研判</a></li>
+                            <li><a href="#section-3-2">3.2 处置建议</a></li>
+                        </ul>
+                    </li>
+                </ul>
+            </nav>
+
+            <section id="section-1" class="content-section">
+                <h1>1. 摘要与核心指标</h1>
+
+                <h2 id="section-1-1">1.1 监测概览</h2>
+                <p>本报告对关键词"{keyword}"进行了全面监测分析，覆盖{len(platforms)}个主流社交媒体平台：{', '.join(platforms)}。采集有效数据{total_items}条，运用多维度分析模型，为您提供专业的舆情与客诉洞察。</p>
+                {ai_insight_html}
+
+                <h2 id="section-1-2">1.2 关键指标表现</h2>
+                <div class="kpi-grid">
+"""
+    for card in kpi_cards:
+        change_class = card.get('type', 'primary')
+        html += f"""                    <div class="kpi-card">
+                        <div class="kpi-value">{card['value']}</div>
+                        <div class="kpi-label">{card['label']}</div>
+                        <div class="kpi-change {change_class}">{card.get('change', '')}</div>
+                    </div>
+"""
+
+    html += f"""                </div>
+
+            </section>
+
+            <section id="section-2" class="content-section">
+                <h1>2. 情感与分布分析</h1>
+
+                <h2 id="section-2-1">2.1 情感结构</h2>
+                <div class="chart-container">
+                    <canvas id="sentimentChart"></canvas>
+                </div>
+                <p style="text-align: center; margin-top: 15px; font-size: 0.9em; color: var(--secondary-color);">
+                    本次监测中，正向声量占{positive_ratio:.1f}%，
+                    中立声量占{neutral_ratio:.1f}%，
+                    负向声量占{negative_ratio:.1f}%。
+                </p>
+
+                <h2 id="section-2-2">2.2 渠道分布</h2>
+                <div class="highlight-box">
+                    <h4>监测平台列表</h4>
+                    <p>本次分析涵盖了以下主流社交媒体和资讯平台：</p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>平台名称</th>
+                                <th>说明</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+{platform_rows_html}                        </tbody>
+                    </table>
+                </div>
+
+                <h2 id="section-2-3">2.3 热点词汇</h2>
+                <p>根据词频统计与热度分析，监测周期内最受关注的词汇包括：</p>
+                <blockquote>
+                    {hot_words_html}
+                </blockquote>
+                <p style="margin-top: 10px; font-size: 0.9em; color: var(--secondary-color);">
+                    这些热词反映了公众最关注的焦点与舆论导向。建议重点关注负面热词并制定针对性的回应策略。
+                </p>
+
+            </section>
+
+            <section id="section-3" class="content-section">
+                <h1>3. 风险评估与建议</h1>
+
+                <h2 id="section-3-1">3.1 风险研判</h2>
+                <div class="highlight-box">
+                    <h4>风险等级评估</h4>
+                    <p><strong>当前风险等级：<span style="color: var(--accent-color); font-size: 1.1em;">{risk_level.upper()}</span></strong></p>
+                    <p>综合风险分数：<strong>{risk_score}</strong></p>
+                    <p>传播峰值时段：<strong>{peak_time}</strong>（{peak_count}条）</p>
+                </div>
+
+                <h2 id="section-3-2">3.2 处置建议</h2>
+                <div class="engine-perspective">
+                    <span class="engine-name">🔍 数据驱动建议</span>
+                    <ol>
+"""
+    
+    if risk_recommendations:
+        for rec in risk_recommendations[:5]:
+            html += f"                        <li>{rec}</li>\n"
+    else:
+        html += """                        <li>建立 7x24 关键词监测与分级告警规则。</li>
+                        <li>对高传播负面内容在 2 小时内完成首轮响应。</li>
+                        <li>将客服、运营、品牌部门纳入同一事件协同群。</li>
+                        <li>定期发布官方声明，主动设置议题。</li>
+                        <li>建立客诉-舆情关联闭环追踪机制。</li>
+"""
+
+    html += """                    </ol>
+                </div>
+
+            </section>
+
+        </main>
+    </div>
+
+    <script>
+        // 切换深色/浅色主题
+        function toggleTheme() {{
+            const html = document.documentElement;
+            const btn = document.getElementById('theme-toggle');
+            const currentTheme = html.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', newTheme);
+            localStorage.setItem('reportTheme', newTheme);
+            btn.textContent = newTheme === 'dark' ? '浅色模式' : '暗色模式';
+        }}
+
+        // 初始化主题
+        (function initTheme() {{
+            const saved = localStorage.getItem('reportTheme') || 'light';
+            document.documentElement.setAttribute('data-theme', saved);
+            document.getElementById('theme-toggle').textContent = saved === 'dark' ? '浅色模式' : '暗色模式';
+        }})();
+
+        // Chart.js：情感分布
+        const sentimentCtx = document.getElementById('sentimentChart')?.getContext('2d');
+        if (sentimentCtx) {{
+            new Chart(sentimentCtx, {{
+                type: 'doughnut',
+                data: {{
+                    labels: ['正向 ({positive}条)', '中立 ({neutral}条)', '负向 ({negative}条)'],
+                    datasets: [{{
+                        data: [{positive}, {neutral}, {negative}],
+                        backgroundColor: ['#27ae60', '#95a5a6', '#e74c3c'],
+                        borderColor: 'var(--background-color)',
+                        borderWidth: 2,
+                        borderRadius: [8, 8, 8]
+                    }}]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {{
+                        legend: {{
+                            position: 'bottom',
+                            labels: {{
+                                color: 'var(--text-color)',
+                                font: {{ size: 12 }}
+                            }}
+                        }},
+                        tooltip: {{
+                            borderColor: 'var(--border-color)',
+                            backgroundColor: 'var(--card-background)',
+                            titleColor: 'var(--text-color)',
+                            bodyColor: 'var(--text-color)',
+                            borderWidth: 1
+                        }}
+                    }}
+                }}
+            }});
+        }}
+    </script>
+</body>
+</html>
+"""
+    return html
+
+
 def _build_report_text(
     keyword: str,
     platforms: List[str],
@@ -300,7 +933,11 @@ def _build_report_text(
         ]
 
     ai_report = ai_report or {}
-    ai_actions = ai_report.get('action_recommendations', [])
+    # 处理 ai_report 可能是字符串的情况（在零数据场景下）
+    if isinstance(ai_report, str):
+        ai_actions = []
+    else:
+        ai_actions = ai_report.get('action_recommendations', []) if isinstance(ai_report, dict) else []
     if ai_actions:
         for item in ai_actions[:3]:
             if item not in recommendations:
@@ -317,13 +954,13 @@ def _build_report_text(
         'summary': summary,
         'findings': findings,
         'recommendations': recommendations,
-        'ai_enhanced': bool(ai_report.get('enhanced')),
+        'ai_enhanced': bool(ai_report.get('enhanced')) if isinstance(ai_report, dict) else False,
         'ai_insight': {
-            'executive_summary': ai_report.get('executive_summary', ''),
-            'risk_judgment': ai_report.get('risk_judgment', ''),
+            'executive_summary': ai_report.get('executive_summary', '') if isinstance(ai_report, dict) else '',
+            'risk_judgment': ai_report.get('risk_judgment', '') if isinstance(ai_report, dict) else '',
             'action_recommendations': ai_actions,
-            'pr_talking_points': ai_report.get('pr_talking_points', []),
-            'source': ai_report.get('source', 'rule_based')
+            'pr_talking_points': ai_report.get('pr_talking_points', []) if isinstance(ai_report, dict) else [],
+            'source': ai_report.get('source', 'rule_based') if isinstance(ai_report, dict) else 'diagnostics'
         }
     }
 
@@ -661,7 +1298,10 @@ def _run_dashboard_pipeline_internal(keyword: str, platforms: List[str], max_ite
                 }
 
     # 检查是否任何平台采集成功（无论是否返回数据）
-    any_platform_succeeded = any(ps.get('success', False) for ps in platform_stats.values())
+    any_platform_succeeded = any(
+        isinstance(ps, dict) and ps.get('success', False) 
+        for ps in platform_stats.values()
+    )
     
     # 如果没有任何平台成功，返回失败
     if not any_platform_succeeded:
@@ -693,7 +1333,7 @@ def _run_dashboard_pipeline_internal(keyword: str, platforms: List[str], max_ite
             'summary': {
                 'total_items': 0,
                 'analysis_time': datetime.now().isoformat(),
-                'note': f'关键词"{keyword}"在{len([p for p in platform_stats.values() if p.get("success")])}个平台采集成功但无相关数据'
+                'note': f'关键词"{keyword}"在{len([p for p in platform_stats.values() if isinstance(p, dict) and p.get("success")])}个平台采集成功但无相关数据'
             }
         }
         wordcloud = []
@@ -983,6 +1623,19 @@ def _export_report_file(pipeline_id: str, export_format: str) -> Path:
                     styles['Normal']
                 ))
         doc.build(story)
+        return output_path
+
+    if export_format == 'html':
+        keyword = pipeline.get('keyword', '舆情报告')
+        platforms = pipeline.get('platforms', [])
+        total_items = analysis.get('summary', {}).get('total_items', 0)
+        analysis_for_html = analysis
+        wordcloud = pipeline.get('wordcloud', [])
+        ai_report = report.get('ai_insight', {})
+        
+        html_content = _build_report_html(keyword, platforms, total_items, analysis_for_html, wordcloud, ai_report)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
         return output_path
 
     raise APIError('Unsupported export format', 400)
@@ -2069,7 +2722,7 @@ def report():
 @app.route('/api/dashboard/pipeline', methods=['POST'])
 @require_json
 @optional_api_key
-@rate_limit(limit=12)
+@rate_limit(limit=30)
 def dashboard_pipeline():
     """关键词驱动的一体化舆情流水线：采集 -> 分析 -> 词云 -> 报告。"""
     req_data = request.json or {}
@@ -2094,12 +2747,22 @@ def dashboard_pipeline():
 @optional_api_key
 @rate_limit(limit=20)
 def export_pipeline_report(pipeline_id):
-    """导出分析报告，支持 docx/pdf。"""
-    export_format = (request.args.get('format') or 'docx').strip().lower()
+    """导出分析报告，支持 html/docx/pdf。"""
+    export_format = (request.args.get('format') or 'html').strip().lower()
+    
+    # 验证format
+    if export_format not in ('html', 'docx', 'pdf'):
+        return jsonify({'success': False, 'error': 'Invalid format. Supported: html, docx, pdf'}), 400
+    
     output_path = _export_report_file(pipeline_id, export_format)
-    mimetype = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    if export_format == 'pdf':
+    
+    if export_format == 'html':
+        mimetype = 'text/html; charset=utf-8'
+    elif export_format == 'docx':
+        mimetype = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    else:  # pdf
         mimetype = 'application/pdf'
+    
     return send_file(output_path, as_attachment=True, download_name=output_path.name, mimetype=mimetype)
 
 
@@ -3630,4 +4293,4 @@ def get_batch_stats():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5002)

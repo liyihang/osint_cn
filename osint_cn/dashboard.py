@@ -798,7 +798,7 @@ DASHBOARD_HTML = '''
                         <label><input type="checkbox" value="tieba" checked />贴吧</label>
                         <label><input type="checkbox" value="toutiao" />头条</label>
                     </div>
-                    <button class="btn btn-primary" onclick="runDashboardPipeline()">一键采集分析</button>
+                    <button id="pipeline-run-btn" class="btn btn-primary" onclick="runDashboardPipeline()">一键采集分析</button>
                     <div class="query-presets" id="pipeline-presets">
                         <button class="preset-btn active" type="button" data-preset="brand" onclick="applyPipelinePreset('brand', this)">品牌舆情</button>
                         <button class="preset-btn" type="button" data-preset="complaint" onclick="applyPipelinePreset('complaint', this)">客诉投诉</button>
@@ -960,6 +960,7 @@ DASHBOARD_HTML = '''
         let trendChart = null;
         let currentView = 'overview';
         let latestPipelineResult = null;
+        let pipelineRunning = false;
         const monitorState = {
             monitors: [],
             groups: [],
@@ -1519,6 +1520,11 @@ DASHBOARD_HTML = '''
         }
 
         async function runDashboardPipeline() {
+            if (pipelineRunning) {
+                return;
+            }
+
+            const runBtn = document.getElementById('pipeline-run-btn');
             const keywordInput = document.getElementById('pipeline-keyword');
             const maxItemsEl = document.getElementById('pipeline-max-items');
             const keyword = (keywordInput?.value || '').trim();
@@ -1534,15 +1540,29 @@ DASHBOARD_HTML = '''
                 platforms: getSelectedPlatforms()
             };
 
-            const result = await safeApiPost('/api/dashboard/pipeline', payload);
-            if (!result || !result.success) {
-                const message = result?.message || '采集分析失败，请检查平台可用性后重试';
-                alert(message);
-                return;
-            }
+            try {
+                pipelineRunning = true;
+                if (runBtn) {
+                    runBtn.disabled = true;
+                    runBtn.textContent = '采集中...';
+                }
 
-            updateByPipelineResult(result);
-            renderReportDrawer({ report: result.report, pipeline: result });
+                const result = await safeApiPost('/api/dashboard/pipeline', payload);
+                if (!result || !result.success) {
+                    const message = result?.message || '采集分析失败，请检查平台可用性后重试';
+                    alert(message);
+                    return;
+                }
+
+                updateByPipelineResult(result);
+                renderReportDrawer({ report: result.report, pipeline: result });
+            } finally {
+                pipelineRunning = false;
+                if (runBtn) {
+                    runBtn.disabled = false;
+                    runBtn.textContent = '一键采集分析';
+                }
+            }
         }
 
         async function safeApiPost(url, payload) {
@@ -2102,6 +2122,7 @@ DASHBOARD_HTML = '''
                     <div class="drawer-card">
                         <div class="drawer-card-title">舆情/客诉分析报告</div>
                         <div class="drawer-toolbar" style="margin-bottom:8px;">
+                            <button class="drawer-btn" onclick="exportCurrentReport('html')">导出 HTML</button>
                             <button class="drawer-btn" onclick="exportCurrentReport('docx')">导出 Word</button>
                             <button class="drawer-btn" onclick="exportCurrentReport('pdf')">导出 PDF</button>
                         </div>

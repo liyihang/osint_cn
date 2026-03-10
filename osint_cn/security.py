@@ -133,11 +133,12 @@ class RateLimiter:
             self._redis_client = None
     
     def _get_identifier(self) -> str:
-        """获取请求标识符（API Key 或 IP）"""
+        """获取请求标识符（API Key 或 IP），并按接口分桶。"""
+        endpoint_scope = request.endpoint or request.path or 'unknown'
         # 优先使用 API Key
         api_key = request.headers.get('X-API-Key') or request.args.get('api_key')
         if api_key:
-            return f"key:{api_key}"
+            return f"key:{api_key}:{endpoint_scope}"
         
         # 使用 IP 地址
         forwarded_for = request.headers.get('X-Forwarded-For')
@@ -146,7 +147,7 @@ class RateLimiter:
         else:
             ip = request.remote_addr
         
-        return f"ip:{ip}"
+        return f"ip:{ip}:{endpoint_scope}"
     
     def _check_redis(self, identifier: str, limit: int) -> tuple:
         """使用 Redis 检查限流（分布式环境）"""
