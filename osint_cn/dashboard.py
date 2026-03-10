@@ -1621,6 +1621,16 @@ DASHBOARD_HTML = '''
             setValue('monitor-negative-threshold', monitor?.thresholds?.negative_ratio ?? 0.3);
             setValue('monitor-risk-threshold', monitor?.thresholds?.risk_score ?? 50);
             setValue('monitor-min-items', monitor?.thresholds?.min_items ?? 30);
+            
+            // 设置启用/禁用状态
+            const enabledCheckbox = document.getElementById('monitor-enabled');
+            if (enabledCheckbox) enabledCheckbox.checked = monitor?.enabled !== false;
+            
+            // 设置导出格式复选框
+            const reportFormats = monitor?.report_formats || ['docx', 'pdf'];
+            document.querySelectorAll('.monitor-format').forEach(checkbox => {
+                checkbox.checked = reportFormats.includes(checkbox.value);
+            });
         }
 
         function bindMonitorDrawerEvents() {
@@ -1696,12 +1706,37 @@ DASHBOARD_HTML = '''
 
         async function saveMonitorFromForm() {
             const monitorId = document.getElementById('monitor-id')?.value || '';
+            const name = (document.getElementById('monitor-name')?.value || '').trim();
+            const keywords = document.getElementById('monitor-keywords')?.value || '';
+            const platforms = (document.getElementById('monitor-platforms')?.value || '').split(',').map(item => item.trim()).filter(Boolean);
+            
+            // 验证必填项
+            if (!name) {
+                alert('请填写监控名称');
+                return;
+            }
+            if (!keywords || keywords.trim().length === 0) {
+                alert('请填写至少一个关键词');
+                return;
+            }
+            if (!platforms || platforms.length === 0) {
+                alert('请选择至少一个监测平台');
+                return;
+            }
+            
+            // 收集选中的导出格式
+            const selectedFormats = Array.from(document.querySelectorAll('.monitor-format:checked')).map(el => el.value);
+            if (selectedFormats.length === 0) {
+                alert('请至少选择一个报告格式');
+                return;
+            }
+
             const payload = {
-                name: document.getElementById('monitor-name')?.value || '',
+                name: name,
                 group_id: document.getElementById('monitor-group-id')?.value || null,
                 tags: document.getElementById('monitor-tags')?.value || '',
-                keywords: document.getElementById('monitor-keywords')?.value || '',
-                platforms: (document.getElementById('monitor-platforms')?.value || '').split(',').map(item => item.trim()).filter(Boolean),
+                keywords: keywords,
+                platforms: platforms,
                 interval_seconds: Number(document.getElementById('monitor-interval')?.value || 1800),
                 max_items: Number(document.getElementById('monitor-max-items')?.value || 60),
                 thresholds: {
@@ -1709,9 +1744,10 @@ DASHBOARD_HTML = '''
                     risk_score: Number(document.getElementById('monitor-risk-threshold')?.value || 50),
                     min_items: Number(document.getElementById('monitor-min-items')?.value || 30)
                 },
-                report_formats: ['docx', 'pdf'],
-                enabled: true
+                report_formats: selectedFormats,
+                enabled: document.getElementById('monitor-enabled')?.checked ?? true
             };
+            
             const result = monitorId
                 ? await safeApiPut(`/api/monitors/${encodeURIComponent(monitorId)}`, payload)
                 : await safeApiPost('/api/monitors', payload);
@@ -1786,12 +1822,15 @@ DASHBOARD_HTML = '''
             });
             const rows = filteredMonitors.map(item => {
                 const selectedClass = item.monitor_id === monitorState.selectedId ? 'active' : '';
+                const enabledBadge = item.enabled !== false ? '<span style="color:var(--green);font-size:0.8em;">●</span>' : '<span style="color:#666;font-size:0.8em;">○</span>';
+                const lastRunTime = item.last_run_at ? new Date(item.last_run_at).toLocaleString('zh-CN') : '未执行';
                 return `
                     <tr class="drawer-row ${selectedClass}" data-monitor-id="${escapeHtml(item.monitor_id)}">
+                        <td>${enabledBadge}</td>
                         <td>${escapeHtml(item.name)}</td>
-                        <td>${escapeHtml((item.keywords || []).join(' / '))}</td>
+                        <td style="font-size:0.9em;color:var(--text-soft);">${lastRunTime}</td>
+                        <td>${escapeHtml((item.keywords || []).slice(0,2).join(','))}</td>
                         <td>${escapeHtml((item.platforms || []).join(', '))}</td>
-                        <td>${escapeHtml(item.last_status || 'idle')}</td>
                     </tr>
                 `;
             }).join('');
@@ -1843,52 +1882,129 @@ DASHBOARD_HTML = '''
                 <div class="drawer-card">
                     <div class="drawer-card-title">监控对象配置</div>
                     <input type="hidden" id="monitor-id" value="${escapeHtml(selected?.monitor_id || '')}" />
-                    <div class="form-grid">
-                        <div>
-                            <label class="form-label">名称</label>
-                            <input class="drawer-input" id="monitor-name" value="${escapeHtml(selected?.name || '')}" placeholder="如：品牌A客诉监控" />
+                    
+                    <!-- 基本配置 -->
+                    <div style="margin-bottom:15px;">
+                        <div class="form-label" style="margin-bottom:5px;">基本配置</div>
+                        <div class="form-grid">
+                            <div>
+                                <label class="form-label" style="font-size:0.9em;">名称 *</label>
+                                <input class="drawer-input" id="monitor-name" value="${escapeHtml(selected?.name || '')}" placeholder="如：品牌A客诉监控" />
+                                <div style="font-size:0.8em;color:var(--text-soft);margin-top:3px;">系统内唯一标识，例如品牌名+监控类型</div>
+                            </div>
+                            <div>
+                                <label class="form-label" style="font-size:0.9em;">所属分组</label>
+                                <select class="drawer-select" id="monitor-group-id">${groupOptions}</select>
+                                <div style="font-size:0.8em;color:var(--text-soft);margin-top:3px;">方便群组管理和查看</div>
+                            </div>
                         </div>
-                        <div>
-                            <label class="form-label">所属分组</label>
-                            <select class="drawer-select" id="monitor-group-id">${groupOptions}</select>
-                        </div>
-                        <div class="form-grid-full">
-                            <label class="form-label">标签</label>
-                            <input class="drawer-input" id="monitor-tags" value="${escapeHtml((selected?.tags || []).join('，'))}" placeholder="如：品牌，投诉，退款" />
-                        </div>
-                        <div>
-                            <label class="form-label">平台</label>
-                            <input class="drawer-input" id="monitor-platforms" value="${escapeHtml((selected?.platforms || ['weibo','zhihu','baidu']).join(','))}" placeholder="weibo,zhihu,baidu" />
-                        </div>
-                        <div class="form-grid-full">
-                            <label class="form-label">关键词</label>
-                            <textarea class="drawer-textarea" id="monitor-keywords" placeholder="多个关键词用逗号分隔">${escapeHtml((selected?.keywords || []).join('，'))}</textarea>
-                        </div>
-                        <div>
-                            <label class="form-label">监控间隔（秒）</label>
-                            <input class="drawer-input" id="monitor-interval" type="number" value="${escapeHtml(selected?.interval_seconds || 1800)}" />
-                        </div>
-                        <div>
-                            <label class="form-label">每平台采集量</label>
-                            <input class="drawer-input" id="monitor-max-items" type="number" value="${escapeHtml(selected?.max_items || 60)}" />
-                        </div>
-                        <div>
-                            <label class="form-label">负面占比阈值</label>
-                            <input class="drawer-input" id="monitor-negative-threshold" type="number" step="0.01" value="${escapeHtml(selected?.thresholds?.negative_ratio ?? 0.3)}" />
-                        </div>
-                        <div>
-                            <label class="form-label">风险分阈值</label>
-                            <input class="drawer-input" id="monitor-risk-threshold" type="number" step="1" value="${escapeHtml(selected?.thresholds?.risk_score ?? 50)}" />
-                        </div>
-                        <div>
-                            <label class="form-label">采集量阈值</label>
-                            <input class="drawer-input" id="monitor-min-items" type="number" step="1" value="${escapeHtml(selected?.thresholds?.min_items ?? 30)}" />
+                        <div class="form-grid">
+                            <div style="grid-column: 1/-1;">
+                                <label class="form-label" style="font-size:0.9em;">标签</label>
+                                <input class="drawer-input" id="monitor-tags" value="${escapeHtml((selected?.tags || []).join('，'))}" placeholder="如：品牌，投诉，退款 (用逗号分隔)" />
+                                <div style="font-size:0.8em;color:var(--text-soft);margin-top:3px;">自定义标签用于快速筛选，多个标签用逗号分隔</div>
+                            </div>
                         </div>
                     </div>
+
+                    <!-- 采集配置 -->
+                    <div style="margin-bottom:15px;">
+                        <div class="form-label" style="margin-bottom:5px;">采集配置</div>
+                        <div class="form-grid">
+                            <div>
+                                <label class="form-label" style="font-size:0.9em;">监测平台 *</label>
+                                <input class="drawer-input" id="monitor-platforms" value="${escapeHtml((selected?.platforms || ['weibo','zhihu','baidu']).join(','))}" placeholder="weibo,zhihu,baidu" />
+                                <div style="font-size:0.8em;color:var(--text-soft);margin-top:3px;">可选：weibo(微博)、zhihu(知乎)、baidu(百度)</div>
+                            </div>
+                            <div>
+                                <label class="form-label" style="font-size:0.9em;">每次采集量 *</label>
+                                <input class="drawer-input" id="monitor-max-items" type="number" value="${escapeHtml(selected?.max_items || 60)}" min="1" />
+                                <div style="font-size:0.8em;color:var(--text-soft);margin-top:3px;">每个平台每次采集条数，默认60</div>
+                            </div>
+                        </div>
+                        <div style="grid-column: 1/-1;">
+                            <label class="form-label" style="font-size:0.9em;">关键词 *</label>
+                            <textarea class="drawer-textarea" id="monitor-keywords" placeholder="多个关键词用逗号或换行分隔" style="min-height:60px;">${escapeHtml((selected?.keywords || []).join('，'))}</textarea>
+                            <div style="font-size:0.8em;color:var(--text-soft);margin-top:3px;">每行或每个逗号为一个关键词，系统会对这些关键词进行持续采集和分析</div>
+                        </div>
+                    </div>
+
+                    <!-- 执行配置 -->
+                    <div style="margin-bottom:15px;">
+                        <div class="form-label" style="margin-bottom:5px;">执行配置</div>
+                        <div class="form-grid">
+                            <div>
+                                <label class="form-label" style="font-size:0.9em;">监控间隔（秒）*</label>
+                                <input class="drawer-input" id="monitor-interval" type="number" value="${escapeHtml(selected?.interval_seconds || 1800)}" min="300" />
+                                <div style="font-size:0.8em;color:var(--text-soft);margin-top:3px;">多久执行一次采集，最小300秒(5分钟)，默认1800秒(30分钟)</div>
+                            </div>
+                            <div>
+                                <label class="form-label" style="font-size:0.9em;">状态</label>
+                                <div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-panel-2);border-radius:4px;">
+                                    <input type="checkbox" id="monitor-enabled" ${selected?.enabled !== false ? 'checked' : ''} style="width:18px;height:18px;cursor:pointer;" />
+                                    <label for="monitor-enabled" style="cursor:pointer;margin:0;font-size:0.9em;">启用监控</label>
+                                </div>
+                                <div style="font-size:0.8em;color:var(--text-soft);margin-top:3px;">禁用后将不会执行采集任务</div>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="form-label" style="font-size:0.9em;">报告格式</label>
+                            <div style="display:flex;gap:8px;padding:8px;background:var(--bg-panel-2);border-radius:4px;">
+                                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.9em;">
+                                    <input type="checkbox" class="monitor-format" value="html" ${(selected?.report_formats || ['docx','pdf']).includes('html') ? 'checked' : ''} />
+                                    HTML
+                                </label>
+                                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.9em;">
+                                    <input type="checkbox" class="monitor-format" value="docx" ${(selected?.report_formats || ['docx','pdf']).includes('docx') ? 'checked' : ''} />
+                                    DOCX
+                                </label>
+                                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.9em;">
+                                    <input type="checkbox" class="monitor-format" value="pdf" ${(selected?.report_formats || ['docx','pdf']).includes('pdf') ? 'checked' : ''} />
+                                    PDF
+                                </label>
+                            </div>
+                            <div style="font-size:0.8em;color:var(--text-soft);margin-top:3px;">选择生成报告的格式，至少选择一个</div>
+                        </div>
+                    </div>
+
+                    <!-- 告警阈值 -->
+                    <div style="margin-bottom:15px;">
+                        <div class="form-label" style="margin-bottom:5px;">告警阈值（触发告警条件）</div>
+                        <div class="form-grid">
+                            <div>
+                                <label class="form-label" style="font-size:0.9em;">负面占比 (%)</label>
+                                <input class="drawer-input" id="monitor-negative-threshold" type="number" step="0.01" min="0" max="1" value="${escapeHtml(selected?.thresholds?.negative_ratio ?? 0.3)}" />
+                                <div style="font-size:0.8em;color:var(--text-soft);margin-top:3px;">当负面内容超过此比例时触发告警，默认0.3(30%)</div>
+                            </div>
+                            <div>
+                                <label class="form-label" style="font-size:0.9em;">风险评分</label>
+                                <input class="drawer-input" id="monitor-risk-threshold" type="number" step="1" min="0" max="100" value="${escapeHtml(selected?.thresholds?.risk_score ?? 50)}" />
+                                <div style="font-size:0.8em;color:var(--text-soft);margin-top:3px;">系统综合评分，默认50（中等风险）</div>
+                            </div>
+                            <div>
+                                <label class="form-label" style="font-size:0.9em;">采集量阈值</label>
+                                <input class="drawer-input" id="monitor-min-items" type="number" step="1" min="1" value="${escapeHtml(selected?.thresholds?.min_items ?? 30)}" />
+                                <div style="font-size:0.8em;color:var(--text-soft);margin-top:3px;">采集条数少于此值时触发告警，默认30条</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 执行历史 -->
+                    ${selected && selected.last_run_at ? `
+                    <div style="margin-bottom:15px;padding:10px;background:var(--bg-panel-2);border-left:3px solid var(--blue);border-radius:4px;">
+                        <div class="form-label" style="margin-bottom:5px;font-size:0.9em;">执行历史</div>
+                        <div style="font-size:0.8em;color:var(--text-soft);">
+                            <div>最后执行：${new Date(selected.last_run_at).toLocaleString('zh-CN')}</div>
+                            <div>执行状态：<span style="color:${selected.last_status === 'idle' ? 'var(--text-soft)' : (selected.last_status === 'running' ? 'var(--yellow)' : (selected.last_status === 'success' ? 'var(--green)' : 'var(--red)'))};font-weight:bold;">${selected.last_status || 'idle'}</span></div>
+                            ${selected.last_pipeline_ids?.length > 0 ? `<div>生成报告ID：${escapeHtml(selected.last_pipeline_ids.slice(-1)[0])}</div>` : ''}
+                        </div>
+                    </div>
+                    ` : '<div style="margin-bottom:15px;padding:10px;background:var(--bg-panel-2);border-radius:4px;font-size:0.8em;color:var(--text-soft);">暂未执行过此监控</div>'}
+
                     <div class="drawer-toolbar" style="margin-top:10px;">
-                        <button class="drawer-btn" id="monitor-save-btn">保存</button>
-                        <button class="drawer-btn" id="monitor-run-btn">立即执行</button>
-                        <button class="drawer-btn" id="monitor-delete-btn">删除</button>
+                        <button class="drawer-btn" id="monitor-save-btn">保存设置</button>
+                        <button class="drawer-btn" id="monitor-run-btn" style="background:var(--green);">立即执行</button>
+                        <button class="drawer-btn" id="monitor-delete-btn" style="background:#ff4d6d;">删除</button>
                     </div>
                 </div>
             `;
