@@ -250,6 +250,67 @@ def _normalize_platforms(platforms: Optional[List[str]]) -> List[str]:
     return ['weibo', 'zhihu', 'baidu']
 
 
+def _safe_int(value: Any, default: int) -> int:
+    """将输入安全转换为整数，失败时返回默认值。"""
+    try:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return default
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value: Any, default: float) -> float:
+    """将输入安全转换为浮点数，失败时返回默认值。"""
+    try:
+        if value is None:
+            return default
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_report_formats(formats: Any) -> List[str]:
+    """标准化导出格式，确保至少存在一个有效格式。"""
+    allowed = ('html', 'docx', 'pdf')
+    if isinstance(formats, str):
+        parts = re.split(r'[,，\n]+', formats)
+    else:
+        parts = formats or []
+
+    normalized = []
+    for item in parts:
+        key = str(item or '').strip().lower()
+        if key in allowed and key not in normalized:
+            normalized.append(key)
+
+    return normalized or ['docx', 'pdf']
+
+
+def _normalize_thresholds(thresholds: Any) -> Dict[str, Any]:
+    """标准化监控阈值，避免非法输入导致创建失败。"""
+    raw = thresholds if isinstance(thresholds, dict) else {}
+    negative_ratio = _safe_float(raw.get('negative_ratio', 0.3), 0.3)
+    risk_score = _safe_int(raw.get('risk_score', 50), 50)
+    min_items = _safe_int(raw.get('min_items', 30), 30)
+
+    return {
+        'negative_ratio': max(0.0, min(negative_ratio, 1.0)),
+        'risk_score': max(0, min(risk_score, 100)),
+        'min_items': max(1, min_items)
+    }
+
+
 def _generate_wordcloud_from_items(items: List[Dict[str, Any]], top_k: int = 80) -> List[Dict[str, Any]]:
     """根据采集内容生成词云数据。"""
     text = ' '.join((item.get('content') or '').strip() for item in items)
@@ -2865,10 +2926,10 @@ def create_monitor():
         platforms=platforms,
         group_id=(str(data.get('group_id')).strip() if data.get('group_id') else None),
         tags=_normalize_tags(data.get('tags')),
-        interval_seconds=max(60, int(data.get('interval_seconds', 1800))),
-        max_items=max(5, min(int(data.get('max_items', 60)), 500)),
-        thresholds=data.get('thresholds', {}),
-        report_formats=data.get('report_formats', ['docx', 'pdf']),
+        interval_seconds=max(60, _safe_int(data.get('interval_seconds', 1800), 1800)),
+        max_items=max(5, min(_safe_int(data.get('max_items', 60), 60), 500)),
+        thresholds=_normalize_thresholds(data.get('thresholds', {})),
+        report_formats=_normalize_report_formats(data.get('report_formats', ['docx', 'pdf'])),
         enabled=bool(data.get('enabled', True))
     )
     monitor_profiles_store[profile.monitor_id] = profile
@@ -2898,13 +2959,13 @@ def update_monitor(monitor_id):
     if 'tags' in data:
         profile.tags = _normalize_tags(data.get('tags'))
     if 'interval_seconds' in data:
-        profile.interval_seconds = max(60, int(data.get('interval_seconds', profile.interval_seconds)))
+        profile.interval_seconds = max(60, _safe_int(data.get('interval_seconds', profile.interval_seconds), profile.interval_seconds))
     if 'max_items' in data:
-        profile.max_items = max(5, min(int(data.get('max_items', profile.max_items)), 500))
+        profile.max_items = max(5, min(_safe_int(data.get('max_items', profile.max_items), profile.max_items), 500))
     if 'thresholds' in data:
-        profile.thresholds = data.get('thresholds', {})
+        profile.thresholds = _normalize_thresholds(data.get('thresholds', {}))
     if 'report_formats' in data:
-        profile.report_formats = data.get('report_formats') or profile.report_formats
+        profile.report_formats = _normalize_report_formats(data.get('report_formats') or profile.report_formats)
     if 'enabled' in data:
         profile.enabled = bool(data.get('enabled'))
     profile.updated_at = datetime.now().isoformat()

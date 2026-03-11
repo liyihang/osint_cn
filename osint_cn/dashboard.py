@@ -789,13 +789,13 @@ DASHBOARD_HTML = '''
                     <div class="query-platforms" id="pipeline-platforms">
                         <label><input type="checkbox" value="weibo" checked />微博</label>
                         <label><input type="checkbox" value="douyin" checked />抖音</label>
-                        <label><input type="checkbox" value="kuaishou" />快手</label>
-                        <label><input type="checkbox" value="zhihu" checked />知乎</label>
-                        <label><input type="checkbox" value="baidu" checked />百度</label>
-                        <label><input type="checkbox" value="wechat" />公众号</label>
-                        <label><input type="checkbox" value="xiaohongshu" />小红书</label>
-                        <label><input type="checkbox" value="bilibili" />B站</label>
-                        <label><input type="checkbox" value="tieba" checked />贴吧</label>
+                        <label><input type="checkbox" value="kuaishou" checked />快手</label>
+                        <label><input type="checkbox" value="zhihu" />知乎</label>
+                        <label><input type="checkbox" value="baidu" />百度</label>
+                        <label><input type="checkbox" value="wechat" checked />公众号</label>
+                        <label><input type="checkbox" value="xiaohongshu" checked />小红书</label>
+                        <label><input type="checkbox" value="bilibili" checked />B站</label>
+                        <label><input type="checkbox" value="tieba" />贴吧</label>
                         <label><input type="checkbox" value="toutiao" />头条</label>
                     </div>
                     <button id="pipeline-run-btn" class="btn btn-primary" onclick="runDashboardPipeline()">一键采集分析</button>
@@ -1025,7 +1025,12 @@ DASHBOARD_HTML = '''
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload || {})
             });
-            return response.json();
+            const result = await response.json().catch(() => null);
+            if (result) return result;
+            return {
+                success: false,
+                message: `请求失败(${response.status})`
+            };
         }
 
         async function apiPut(url, payload) {
@@ -1034,7 +1039,12 @@ DASHBOARD_HTML = '''
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload || {})
             });
-            return response.json();
+            const result = await response.json().catch(() => null);
+            if (result) return result;
+            return {
+                success: false,
+                message: `请求失败(${response.status})`
+            };
         }
 
         async function apiDelete(url) {
@@ -1390,7 +1400,7 @@ DASHBOARD_HTML = '''
         function getSelectedPlatforms() {
             const checked = Array.from(document.querySelectorAll('#pipeline-platforms input[type="checkbox"]:checked'));
             const values = checked.map(item => item.value).filter(Boolean);
-            return values.length ? values : ['weibo', 'douyin', 'zhihu', 'baidu', 'tieba'];
+            return values.length ? values : ['weibo', 'douyin', 'kuaishou', 'wechat', 'xiaohongshu', 'bilibili'];
         }
 
         function applyPipelinePreset(name, trigger) {
@@ -1610,12 +1620,14 @@ DASHBOARD_HTML = '''
                 const el = document.getElementById(id);
                 if (el) el.value = value || '';
             };
+            const defaultPlatforms = ['weibo', 'douyin', 'kuaishou', 'wechat', 'xiaohongshu', 'bilibili'];
+            const defaultGroupId = monitor?.group_id || monitorState.selectedGroupId || '';
             setValue('monitor-id', monitor?.monitor_id || '');
             setValue('monitor-name', monitor?.name || '');
-            setValue('monitor-group-id', monitor?.group_id || '');
+            setValue('monitor-group-id', defaultGroupId);
             setValue('monitor-tags', (monitor?.tags || []).join('，'));
             setValue('monitor-keywords', (monitor?.keywords || []).join('，'));
-            setValue('monitor-platforms', (monitor?.platforms || []).join(','));
+            setValue('monitor-platforms', (monitor?.platforms?.length ? monitor.platforms : defaultPlatforms).join(','));
             setValue('monitor-interval', monitor?.interval_seconds || 1800);
             setValue('monitor-max-items', monitor?.max_items || 60);
             setValue('monitor-negative-threshold', monitor?.thresholds?.negative_ratio ?? 0.3);
@@ -1645,6 +1657,17 @@ DASHBOARD_HTML = '''
                 resetBtn.onclick = () => {
                     monitorState.selectedId = null;
                     renderMonitorDrawer();
+                    // 明确进入新建模式：自动聚焦名称输入框，避免“点了没反应”的体验。
+                    setTimeout(() => {
+                        const nameInput = document.getElementById('monitor-name');
+                        if (!nameInput) return;
+                        nameInput.focus();
+                        try {
+                            nameInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        } catch (e) {
+                            // 某些浏览器环境不支持滚动选项，忽略即可。
+                        }
+                    }, 0);
                 };
             }
             const saveBtn = document.getElementById('monitor-save-btn');
@@ -1708,7 +1731,17 @@ DASHBOARD_HTML = '''
             const monitorId = document.getElementById('monitor-id')?.value || '';
             const name = (document.getElementById('monitor-name')?.value || '').trim();
             const keywords = document.getElementById('monitor-keywords')?.value || '';
-            const platforms = (document.getElementById('monitor-platforms')?.value || '').split(',').map(item => item.trim()).filter(Boolean);
+            const defaultPlatforms = ['weibo', 'douyin', 'kuaishou', 'wechat', 'xiaohongshu', 'bilibili'];
+            const parsedPlatforms = (document.getElementById('monitor-platforms')?.value || '')
+                .split(/[,，\\n]+/)
+                .map(item => item.trim().toLowerCase())
+                .filter(Boolean);
+            const platforms = parsedPlatforms.length ? parsedPlatforms : defaultPlatforms;
+            const toNumber = (id, defaultValue) => {
+                const raw = document.getElementById(id)?.value;
+                const parsed = Number(raw);
+                return Number.isFinite(parsed) ? parsed : defaultValue;
+            };
             
             // 验证必填项
             if (!name) {
@@ -1719,11 +1752,6 @@ DASHBOARD_HTML = '''
                 alert('请填写至少一个关键词');
                 return;
             }
-            if (!platforms || platforms.length === 0) {
-                alert('请选择至少一个监测平台');
-                return;
-            }
-            
             // 收集选中的导出格式
             const selectedFormats = Array.from(document.querySelectorAll('.monitor-format:checked')).map(el => el.value);
             if (selectedFormats.length === 0) {
@@ -1737,12 +1765,12 @@ DASHBOARD_HTML = '''
                 tags: document.getElementById('monitor-tags')?.value || '',
                 keywords: keywords,
                 platforms: platforms,
-                interval_seconds: Number(document.getElementById('monitor-interval')?.value || 1800),
-                max_items: Number(document.getElementById('monitor-max-items')?.value || 60),
+                interval_seconds: toNumber('monitor-interval', 1800),
+                max_items: toNumber('monitor-max-items', 60),
                 thresholds: {
-                    negative_ratio: Number(document.getElementById('monitor-negative-threshold')?.value || 0.3),
-                    risk_score: Number(document.getElementById('monitor-risk-threshold')?.value || 50),
-                    min_items: Number(document.getElementById('monitor-min-items')?.value || 30)
+                    negative_ratio: toNumber('monitor-negative-threshold', 0.3),
+                    risk_score: toNumber('monitor-risk-threshold', 50),
+                    min_items: toNumber('monitor-min-items', 30)
                 },
                 report_formats: selectedFormats,
                 enabled: document.getElementById('monitor-enabled')?.checked ?? true
@@ -1752,7 +1780,7 @@ DASHBOARD_HTML = '''
                 ? await safeApiPut(`/api/monitors/${encodeURIComponent(monitorId)}`, payload)
                 : await safeApiPost('/api/monitors', payload);
             if (!result || !result.success) {
-                alert(result?.message || '保存监控对象失败');
+                alert(result?.error || result?.message || '保存监控对象失败');
                 return;
             }
             monitorState.selectedId = result.monitor?.monitor_id || null;
@@ -1800,9 +1828,10 @@ DASHBOARD_HTML = '''
         function renderMonitorDrawer() {
             const selected = getSelectedMonitor();
             const activeGroup = (monitorState.groups || []).find(item => item.group_id === monitorState.selectedGroupId) || null;
+            const draftGroupId = selected?.group_id || monitorState.selectedGroupId || '';
             const groupOptions = ['<option value="">未分组</option>'].concat(
                 (monitorState.groups || []).map(group => {
-                    const selectedAttr = group.group_id === selected?.group_id ? 'selected' : '';
+                    const selectedAttr = group.group_id === draftGroupId ? 'selected' : '';
                     return `<option value="${escapeHtml(group.group_id)}" ${selectedAttr}>${escapeHtml(group.name)}</option>`;
                 })
             ).join('');
@@ -1834,6 +1863,9 @@ DASHBOARD_HTML = '''
                     </tr>
                 `;
             }).join('');
+            const emptyMonitorHint = monitorState.selectedGroupId
+                ? `当前分组“${escapeHtml(activeGroup?.name || '未命名')}”暂无监控对象。可直接点“新建”并保存，或切换到“全部分组”查看。`
+                : '暂无监控对象，请先创建';
 
             const html = `
                 <div class="drawer-card">
@@ -1877,7 +1909,7 @@ DASHBOARD_HTML = '''
                             <thead><tr><th>名称</th><th>关键词</th><th>平台</th><th>状态</th></tr></thead>
                             <tbody>${rows}</tbody>
                         </table>
-                    ` : '<div class="drawer-empty">暂无监控对象，请先创建</div>'}
+                    ` : `<div class="drawer-empty">${emptyMonitorHint}</div>`}
                 </div>
                 <div class="drawer-card">
                     <div class="drawer-card-title">监控对象配置</div>
@@ -1913,8 +1945,8 @@ DASHBOARD_HTML = '''
                         <div class="form-grid">
                             <div>
                                 <label class="form-label" style="font-size:0.9em;">监测平台 *</label>
-                                <input class="drawer-input" id="monitor-platforms" value="${escapeHtml((selected?.platforms || ['weibo','zhihu','baidu']).join(','))}" placeholder="weibo,zhihu,baidu" />
-                                <div style="font-size:0.8em;color:var(--text-soft);margin-top:3px;">可选：weibo(微博)、zhihu(知乎)、baidu(百度)</div>
+                                <input class="drawer-input" id="monitor-platforms" value="${escapeHtml((selected?.platforms || ['weibo','douyin','kuaishou','wechat','xiaohongshu','bilibili']).join(','))}" placeholder="weibo,douyin,kuaishou,wechat,xiaohongshu,bilibili" />
+                                <div style="font-size:0.8em;color:var(--text-soft);margin-top:3px;">默认必选：weibo(微博)、douyin(抖音)、kuaishou(快手)、wechat(公众号)、xiaohongshu(小红书)、bilibili(B站)；其他平台可自行追加</div>
                             </div>
                             <div>
                                 <label class="form-label" style="font-size:0.9em;">每次采集量 *</label>
